@@ -1,0 +1,20 @@
+node_modules/
+
+# Never version credentials or machine state, even by accident
+auth.json
+trust.json
+models-store.json
+test-creds.json
+test-secrets.env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+sessions/
+telemetry/
+.omc/
+
+# editor/script backups, never versioned
+*.bak-*
+*.retired-*

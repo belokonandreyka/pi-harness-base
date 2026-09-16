@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "orchestratorOnly": true,
+  "chain": [
+    "gateway/claude-opus-5",
+    "github-copilot/claude-opus-5",
+    "github-copilot/gpt-5.6-sol"
+  ],
+  "paidEntries": [],
+  "contextWarnings": [],
+  "paidNoticeText": "ALL QUOTAS EXHAUSTED — now running on paid capacity",
+  "resumeText": "The previous provider exhausted its quota. Continue the current task from where it stopped; do not redo completed work.",
+  "notifyUser": true
+}

@@ -1,0 +1,5 @@
+{
+  "providers": ["gateway", "gateway-openai"],
+  "weeklyCap": 500,
+  "monthlyCap": 0
+}

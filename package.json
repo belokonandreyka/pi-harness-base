@@ -1,0 +1,13 @@
+{
+  "name": "pi-harness-base",
+  "version": "0.1.0",
+  "description": "Extensions, skills, subagent types and profile templates for a pi coding-agent harness with subagents in Herdr panes",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

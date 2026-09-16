@@ -1,0 +1,6 @@
+{
+    "tsserver": {
+        "command": ["typescript-language-server", "--stdio"],
+        "extensions": [".ts", ".tsx", ".js", ".jsx"]
+    }
+}

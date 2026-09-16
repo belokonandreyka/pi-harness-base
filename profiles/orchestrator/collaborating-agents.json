@@ -1,0 +1,9 @@
+{
+  "subagentLaunchMode": "herdr-pane",
+  "preserveOrchestratorPane": true,
+  "subagentLaunchDisplay": "hidden",
+  "subagentProgressIntervalMs": 0,
+  "subagentCompletionDisplay": "hidden",
+  "triggerTurnOnSubagentCompletion": true,
+  "subagentAgentDir": "~/.pi-sub/agent"
+}
