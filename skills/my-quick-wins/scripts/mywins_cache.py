@@ -210,7 +210,7 @@ def blockers_of(issue: dict) -> list[list[str]]:
 def links_of(issue: dict) -> list[list[str]]:
     """[key, status] of every linked ticket, whatever the link type or direction.
     A '01 Relates' Portal/Retail task that gets Resolved is exactly the signal
-    that lifts a "no endpoint" verdict (the precedent: a backend task linked as 'relates')."""
+    that lifts a "no endpoint" verdict."""
     out = []
     for link in (issue.get("fields") or {}).get("issuelinks") or []:
         other = link.get("inwardIssue") or link.get("outwardIssue")
