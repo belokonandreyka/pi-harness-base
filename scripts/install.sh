@@ -67,7 +67,7 @@ Next:
      Keychain command; store the key with:
        security add-generic-password -s ai-gateway-key -a "\$USER" -w
   2. Both settings.json — check the package paths point at your checkouts of
-     pi-collaborating-agents, pi-search-tools and model-fallback.
+     pi-collaborating-agents and pi-search-tools.
   3. $ORCH/AGENTS.md — the Language and Aliases sections are yours to edit.
   4. $ORCH/my-quick-wins.json — your Jira site, filter id, repos root and
      the CI account, for "plan my day".

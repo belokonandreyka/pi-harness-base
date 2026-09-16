@@ -11,7 +11,7 @@
     "/Users/<you>/projects/pi-search-tools"
   ],
   "extensions": [
-    "/Users/<you>/projects/pi-collaborating-agents-model-fallback/extensions/model-fallback/index.ts",
+    "/Users/<you>/projects/pi-collaborating-agents/extensions/model-fallback/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/skill-usage-telemetry/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/durable-context/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/read-guard/index.ts",

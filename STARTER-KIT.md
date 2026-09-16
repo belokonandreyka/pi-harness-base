@@ -87,7 +87,7 @@ Sanity check: `pi`, ask it something about a repo, `/model` shows
 
 | Piece | Where | What it does |
 |---|---|---|
-| `pi-collaborating-agents` fork | `~/projects/pi-collaborating-agents`, branch `remove-cmux` | the `subagent` tool; the fork adds the `herdr-pane` launch mode and resolves types, sessions and config per profile |
+| `pi-collaborating-agents` fork | `~/projects/pi-collaborating-agents` | the `subagent` tool; the fork adds the `herdr-pane` launch mode and resolves types, sessions and config per profile |
 | `@ogulcancelik/pi-herdr` | npm package in `settings.json` | `herdr_layout`, `herdr_pane`, `herdr_agent` tools |
 | `collaborating-agents.json` | `profiles/orchestrator/` | `subagentLaunchMode: herdr-pane`, hidden displays, `triggerTurnOnSubagentCompletion: true`, `subagentAgentDir: ~/.pi-sub/agent` |
 | Subagent profile | `~/.pi-sub/agent/` | own `settings.json` (same gateway, none of the orchestrator-only extensions), a 2.4 KB `AGENTS.md` holding only the report contract, `context-ceiling.json` on at 120k |
@@ -168,8 +168,8 @@ check is said out loud.
 
 ## 5. Optional
 
-- **model-fallback** (`pi-collaborating-agents`, branch
-  `model-fallback-chain`): the orchestrator walks `gateway/claude-opus-5 →
+- **model-fallback** (`extensions/model-fallback` in the
+  `pi-collaborating-agents` fork): the orchestrator walks `gateway/claude-opus-5 →
   github-copilot/claude-opus-5 → github-copilot/gpt-5.6-sol` on quota errors
   and injects a "continue where you stopped" prompt.
 - **A second profile** for another client or personal work:
@@ -193,9 +193,8 @@ check is said out loud.
 ~/.config/mcp/mcp.json       MCP servers
 ~/projects/pi-harness-base   this repo
 ~/projects/<overlay>         your company-specific skills and configs
-~/projects/pi-collaborating-agents   fork, branch remove-cmux
+~/projects/pi-collaborating-agents   fork: subagents + model-fallback
 ~/projects/pi-search-tools
-~/projects/pi-collaborating-agents-model-fallback   branch model-fallback-chain
 ```
 
 ## What to personalize

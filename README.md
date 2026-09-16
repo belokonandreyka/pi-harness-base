@@ -45,8 +45,7 @@ profile settings and are not vendored here:
 
 | Repository | Purpose |
 |---|---|
-| `pi-collaborating-agents` (fork, branch `remove-cmux`) | subagents; adds the `herdr-pane` launch mode and per-profile resolution |
-| `pi-collaborating-agents` (fork, branch `model-fallback-chain`) | the model chain |
+| `pi-collaborating-agents` (fork) | subagents; adds the `herdr-pane` launch mode, per-profile resolution and the `model-fallback` extension |
 | `pi-search-tools` | `rg` / `fd` tools with a byte cap and spill-to-file |
 
 ## Install
