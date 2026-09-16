@@ -139,6 +139,7 @@ installer:
 | Skill | Trigger | What it does |
 |---|---|---|
 | `investigate-ticket` | a ticket key, "investigate" | read-only root cause: Jira and comments, a scout subagent, a report, no code changes. Fill in its **Configure** section |
+| `my-quick-wins` | "plan my day" | reads your Jira filter, scouts each ticket in parallel batches, caches verdicts day to day so a quiet morning costs zero scouts. Config in `<agent-dir>/my-quick-wins.json` |
 | `herdr-terminals` | before a long command | inline first, sentinels for `wait_output`, close panes before the turn ends |
 | `ralplan` | `/ralplan` | Planner, Architect, Critic planning loop on subagents |
 | `subagent-worktree-ops` | before spawning | see tier 2 |
@@ -153,7 +154,6 @@ What belongs in the overlay, with the shape used in the reference setup:
 | `finish-ticket` | push, merge into the integration branch, type-check, Jira comment and resolve with the worklog inside the transition |
 | `browser-verify-<project>` | bug repro with layer ownership, or feature verification with real-browser proof |
 | team and ownership skills | who owns which project and layer |
-| a daily-plan skill | reads your Jira filter, scouts each ticket in parallel batches, caches verdicts day to day |
 
 MCP servers go in `~/.config/mcp/mcp.json`, loaded lazily by
 `pi-mcp-adapter`. The reference set: a Playwright server per project with its
@@ -201,7 +201,7 @@ check is said out loud.
 ## What to personalize
 
 - `AGENTS.md`: Language, Aliases, the review type you trust.
-- `investigate-ticket`: the Configure section.
+- `investigate-ticket`: the Configure section; `my-quick-wins.json`: Jira site, filter, repos root, CI account, language.
 - `~/.zshrc`: your Jira username; the `JIRA_GIT_HOOK_*` names come from the
   repo's git hooks.
 - `gateway-budget.json`: provider names and your weekly cap.

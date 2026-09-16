@@ -1,0 +1,16 @@
+{
+  "jiraSite": "yourcompany",
+  "filterId": 12345,
+  "reposRoot": "~/work",
+  "primaryRepos": ["web-app"],
+  "integrationRefs": ["origin/test", "origin/develop", "origin/master", "origin/main"],
+  "skipPrefixes": ["TIME"],
+  "skipKeys": [],
+  "serviceEmails": ["jenkins@yourcompany.com"],
+  "serviceNames": ["jenkins"],
+  "rulesPaths": { "web-app": ["AGENTS.md", "docs"] },
+  "contextFiles": ["~/work/web-app/AGENTS.md"],
+  "maxAgeDays": 7,
+  "language": "en",
+  "cache": ""
+}

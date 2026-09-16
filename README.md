@@ -32,7 +32,7 @@ order and where the overlay plugs in.
 | Path | What it is |
 |---|---|
 | `extensions/` | nine extensions with tests, documented in [extensions/README.md](extensions/README.md) |
-| `skills/` | `herdr-terminals`, `investigate-ticket`, `ralplan`, `subagent-worktree-ops` |
+| `skills/` | `herdr-terminals`, `investigate-ticket`, `my-quick-wins` ("plan my day", with its day-to-day cache script), `ralplan`, `subagent-worktree-ops` |
 | `subagents/` | subagent type definitions (`*.toml`): model, reasoning, tools, prompt |
 | `profiles/orchestrator/` | templates for `~/.pi/agent`: settings, `AGENTS.md`, `durable-context.md`, `models.json.template`, extension configs |
 | `profiles/subagent/` | templates for `~/.pi-sub/agent` |

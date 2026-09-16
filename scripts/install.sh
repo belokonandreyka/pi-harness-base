@@ -43,6 +43,7 @@ for f in settings.json AGENTS.md durable-context.md collaborating-agents.json \
   render "$BASE/profiles/orchestrator/$f" "$ORCH/$f"
 done
 render "$BASE/profiles/orchestrator/models.json.template" "$ORCH/models.json"
+render "$BASE/skills/my-quick-wins/config.example.json" "$ORCH/my-quick-wins.json"
 for d in "$BASE"/skills/*/; do
   link "${d%/}" "$ORCH/skills/$(basename "$d")"
 done
@@ -68,5 +69,7 @@ Next:
   2. Both settings.json — check the package paths point at your checkouts of
      pi-collaborating-agents, pi-search-tools and model-fallback.
   3. $ORCH/AGENTS.md — the Language and Aliases sections are yours to edit.
-  4. pi, then /login for github-copilot.
+  4. $ORCH/my-quick-wins.json — your Jira site, filter id, repos root and
+     the CI account, for "plan my day".
+  5. pi, then /login for github-copilot.
 EOF
