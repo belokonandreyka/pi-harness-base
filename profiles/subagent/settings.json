@@ -3,12 +3,6 @@
   "defaultProvider": "gateway",
   "defaultModel": "claude-opus-5",
   "defaultThinkingLevel": "medium",
-  "packages": [
-    "npm:@narumitw/pi-lsp",
-    "npm:pi-mcp-adapter",
-    "/Users/<you>/projects/pi-collaborating-agents",
-    "/Users/<you>/projects/pi-search-tools"
-  ],
   "extensions": [
     "/Users/<you>/projects/pi-harness-base/extensions/durable-context/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/read-guard/index.ts",

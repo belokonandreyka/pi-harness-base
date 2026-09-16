@@ -3,13 +3,6 @@
   "defaultProvider": "gateway",
   "defaultModel": "claude-opus-5",
   "defaultThinkingLevel": "medium",
-  "packages": [
-    "npm:@ogulcancelik/pi-herdr",
-    "npm:pi-mcp-adapter",
-    "npm:@narumitw/pi-lsp",
-    "/Users/<you>/projects/pi-collaborating-agents",
-    "/Users/<you>/projects/pi-search-tools"
-  ],
   "extensions": [
     "/Users/<you>/projects/pi-collaborating-agents/extensions/model-fallback/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/skill-usage-telemetry/index.ts",

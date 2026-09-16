@@ -59,16 +59,24 @@ Copilot is authenticated inside pi: `/login`, then `github-copilot`.
 A single pi that talks to the gateway and knows the house rules.
 
 ```bash
-git clone git@github.com:belokonandreyka/pi-harness-base.git ~/projects/pi-harness-base
-~/projects/pi-harness-base/scripts/install.sh
+mkdir -p ~/projects && cd ~/projects
+git clone https://github.com/belokonandreyka/pi-harness-base
+git clone https://github.com/belokonandreyka/pi-collaborating-agents
+git clone https://github.com/belokonandreyka/pi-search-tools
+pi-harness-base/scripts/install.sh            # add --copilot if you have no gateway
 ```
+
+The installer also fills tier 2 (subagent profile, types, packages); it is
+listed here because tier 1 is where you first check the result. Shortcut:
+[docs/bootstrap-prompt.md](docs/bootstrap-prompt.md) lets a bare pi run all of
+this for you.
 
 What lands in `~/.pi/agent/` and what to do with it:
 
 | File | Notes |
 |---|---|
 | `models.json` | from the template: replace `<GATEWAY_HOST>`; two providers, `gateway` (anthropic-messages) and `gateway-openai` (openai-responses); prices are list × 1.1 in the reference setup |
-| `settings.json` | `defaultProvider: gateway`, `defaultModel: claude-opus-5`, thinking `medium`. Remove the `extensions` entries until tier 3 |
+| `settings.json` | `defaultProvider: gateway` (or `github-copilot` with `--copilot`), `defaultModel: claude-opus-5`, thinking `medium`; `packages` are added by `pi install` |
 | `AGENTS.md` | communication contract, roles, review rule, pane rules, context hygiene. Edit **Language** and **Aliases** |
 | `pi-lsp.json` | tsserver wiring for `@narumitw/pi-lsp` |
 
@@ -172,7 +180,9 @@ check is said out loud.
   `pi-collaborating-agents` fork): the orchestrator walks `gateway/claude-opus-5 →
   github-copilot/claude-opus-5 → github-copilot/gpt-5.6-sol` on quota errors
   and injects a "continue where you stopped" prompt.
-- **A second profile** for another client or personal work:
+- **A second profile** for another client, personal work, or a throwaway
+  demo (`PI_CODING_AGENT_DIR=~/.pi-demo/agent pi`; the installer derives
+  `~/.pi-demo-sub/agent` and `~/.pi-demo/agents` from it):
   `PI_CODING_AGENT_DIR` moves all of pi's state, `CLAUDE_CONFIG_DIR` moves
   Claude Code credentials. The fork, the bridge and the MCP adapter all honor
   the profile.

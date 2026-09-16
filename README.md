@@ -38,7 +38,8 @@ order and where the overlay plugs in.
 | `profiles/subagent/` | templates for `~/.pi-sub/agent` |
 | `measure/` | probes for what each request actually costs |
 | `notes/` | measurements worth keeping (deferred tool loading through a gateway, dependency drift) |
-| `scripts/install.sh` | copies the templates into both profiles without overwriting, symlinks the skills |
+| `scripts/install.sh` | renders the templates into both profiles without overwriting, symlinks the skills, installs the packages; `--copilot` for a gateway-less setup |
+| `docs/bootstrap-prompt.md` | the prompt that lets a bare pi install all of this by itself |
 
 Extensions that live in their own repositories are referenced by path from the
 profile settings and are not vendored here:
@@ -50,13 +51,24 @@ profile settings and are not vendored here:
 
 ## Install
 
+Clone the three repositories side by side, then run the installer:
+
 ```bash
-git clone git@github.com:belokonandreyka/pi-harness-base.git ~/projects/pi-harness-base
-~/projects/pi-harness-base/scripts/install.sh
+mkdir -p ~/projects && cd ~/projects
+git clone https://github.com/belokonandreyka/pi-harness-base
+git clone https://github.com/belokonandreyka/pi-collaborating-agents
+git clone https://github.com/belokonandreyka/pi-search-tools
+pi-harness-base/scripts/install.sh --copilot     # or without the flag for gateway + Copilot
 ```
 
-The script prints what it wrote and what it kept, then the four things to edit
-by hand. Full walk-through, tier by tier, in [STARTER-KIT.md](STARTER-KIT.md).
+It writes the profile of the current pi (`$PI_CODING_AGENT_DIR`, default
+`~/.pi/agent`), a subagent profile and a types directory next to it, symlinks
+the skills and runs `pi install` for the packages. It never overwrites, so
+re-running after a pull is safe. Then it prints the few things to edit by hand.
+
+Or let pi do all of that itself: [docs/bootstrap-prompt.md](docs/bootstrap-prompt.md)
+has the two commands you run and the prompt you paste. Full walk-through,
+tier by tier, in [STARTER-KIT.md](STARTER-KIT.md).
 
 ## Tests
 

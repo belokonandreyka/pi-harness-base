@@ -5,5 +5,5 @@
   "subagentProgressIntervalMs": 0,
   "subagentCompletionDisplay": "hidden",
   "triggerTurnOnSubagentCompletion": true,
-  "subagentAgentDir": "~/.pi-sub/agent"
+  "subagentAgentDir": "/Users/<you>/.pi-sub/agent"
 }
