@@ -100,6 +100,18 @@ if [[ "$PROVIDER" == "gateway" && -f "$ORCH/models.json" ]]; then
   render "$ORCH/models.json" "$SUB/models.json"
 fi
 
+# Provider logins live in <profile>/auth.json, so the subagent profile shares
+# the orchestrator's file: one /login serves both. pi drops an empty "{}"
+# there on first start; replace that, keep anything else.
+if [[ -f "$SUB/auth.json" && ! -L "$SUB/auth.json" && "$(cat "$SUB/auth.json")" == "{}" ]]; then
+  rm "$SUB/auth.json"
+fi
+if [[ ! -e "$SUB/auth.json" && ! -L "$SUB/auth.json" ]]; then
+  mkdir -p "$SUB"
+  ln -s "$ORCH/auth.json" "$SUB/auth.json"
+  printf '  link    %s -> %s\n' "${SUB/#$HOME/~}/auth.json" "${ORCH/#$HOME/~}/auth.json"
+fi
+
 # herdr's own pi integration writes its extension into ~/.pi/agent only;
 # a non-default profile gets a copy so pane status works there too.
 HERDR_EXT="$HOME/.pi/agent/extensions/herdr-agent-state.ts"
