@@ -195,7 +195,16 @@ export default function (pi: ExtensionAPI) {
 					let pwd = ctx.cwd;
 					if (home && pwd.startsWith(home)) pwd = "~" + pwd.slice(home.length);
 					const branch = footerData.getGitBranch();
-					const pwdLine = theme.fg("dim", branch ? `${pwd} (${branch})` : pwd);
+					// pi-tui aborts the whole process when a rendered line is wider than
+					// the terminal (pi-tui-crash.log: "Line N visible width"); a 22-column
+					// pane from a phone client took down a subagent and then the
+					// orchestrator this way. Keep the tail of the path, it carries the
+					// repo and branch.
+					let pwdText = branch ? `${pwd} (${branch})` : pwd;
+					if (visibleWidth(pwdText) > width) {
+						pwdText = width > 1 ? `…${pwdText.slice(pwdText.length - (width - 1))}` : "…".slice(0, width);
+					}
+					const pwdLine = theme.fg("dim", pwdText);
 
 					// Line 2: usage stats (left) + credits + provider/model (right)
 					let input = 0,
