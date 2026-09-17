@@ -1,0 +1,27 @@
+# Brand colour for pi in the qintmb.herdr-icon-agent-ui sidebar layout.
+# Paste the `pi = [...]` array under [ui.sidebar.agents.rows_by_agent] in
+# ~/.config/herdr/config.toml (the plugin ships entries for claude and codex
+# only; every other agent falls back to grey). Logo, working spinner and idle
+# LED take the accent; done stays green, blocked stays red, like the others.
+# #61AFEF is one-dark's blue; pick any hex that suits your theme.
+[ui.sidebar.agents.rows_by_agent]
+pi = [
+  [{ token = "$hs_group", bold = true, dim = false, fg = "#A8ADB9" }, { token = "$hs_group_dim", dim = true, fg = "#A8ADB9" }],
+  [{ token = "$hs_terminals", dim = true, fg = "#A8ADB9" }],
+  [{ token = "$hs_tab", fg = "#A8ADB9", dim = false }, { token = "$hs_tab_dim", fg = "#A8ADB9", dim = true }],
+  [
+    { token = "$hs_logo", fg = "#61AFEF", dim = false },
+    { token = "$hs_logo_dim", fg = "#A8ADB9", dim = true },
+    { token = "$hs_working", fg = "#61AFEF", dim = false },
+    { token = "$hs_working_dim", fg = "#A8ADB9", dim = true },
+    { token = "$hs_blocked", fg = "#F08080", dim = false },
+    { token = "$hs_blocked_dim", fg = "#A8ADB9", dim = true },
+    { token = "$hs_done", fg = "#91C788", dim = false },
+    { token = "$hs_done_dim", fg = "#A8ADB9", dim = true },
+    { token = "$hs_idle", fg = "#61AFEF", dim = false },
+    { token = "$hs_idle_dim", fg = "#A8ADB9", dim = true },
+    { token = "$hs_unknown", fg = "#A8ADB9", dim = false },
+    { token = "$hs_unknown_dim", fg = "#A8ADB9", dim = true },
+  ],
+  [{ token = "$hs_gap" }],
+]

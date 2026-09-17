@@ -39,6 +39,8 @@ order and where the overlay plugs in.
 | `measure/` | probes for what each request actually costs |
 | `notes/` | measurements worth keeping (deferred tool loading through a gateway, dependency drift) |
 | `scripts/install.sh` | renders the templates into both profiles without overwriting, symlinks the skills, installs the packages; `--copilot` for a gateway-less setup |
+| `scripts/patch-terminal-font.py` | JetBrains Mono with the Herdr agent-icon glyphs, for terminals without font fallback (Terminal.app) |
+| `herdr/` | sidebar colour entry for pi, used by the icon plugin ([docs/herdr-sidebar-icons.md](docs/herdr-sidebar-icons.md)) |
 | `docs/bootstrap-prompt.md` | the prompt that lets a bare pi install all of this by itself |
 
 Extensions that live in their own repositories are referenced by path from the

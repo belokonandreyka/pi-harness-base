@@ -191,6 +191,11 @@ check is said out loud.
   question, not a technical one.
 - **A cron somewhere else** driving this machine over a forced-command SSH
   bridge, so a daily plan arrives at 09:00 without anyone typing it.
+- **Sidebar icons** (`qintmb/herdr-icon-agent-ui`): logo per agent, spinner
+  while a subagent works, `✓` when it is done. Ghostty needs three config
+  lines; Terminal.app needs the patched font from
+  `scripts/patch-terminal-font.py`. Steps and the pi colour entry in
+  [docs/herdr-sidebar-icons.md](docs/herdr-sidebar-icons.md).
 
 ## Directory map
 
@@ -201,6 +206,7 @@ check is said out loud.
 ~/.pi/agents/*.toml          subagent types, shared with the sub profile
 ~/.pi-sub/agent/             subagent profile: settings, AGENTS.md, ceiling
 ~/.config/mcp/mcp.json       MCP servers
+~/.config/herdr/config.toml  Herdr: theme, keys, sidebar layout (icon plugin)
 ~/projects/pi-harness-base   this repo
 ~/projects/<overlay>         your company-specific skills and configs
 ~/projects/pi-collaborating-agents   fork: subagents + model-fallback
