@@ -1,7 +1,7 @@
 name = "codex-sol-reviewer"
 description = "Read-only code reviewer on GPT-5.6 Sol via the GitHub Copilot connector. Named for the model, not the connector: company work must not touch a private Codex subscription."
 model = "github-copilot/gpt-5.6-sol"
-reasoning = "high"
+reasoning = "xhigh"
 tools = "read, bash, rg, fd, agent_message"
 prompt = """You are a senior code reviewer running READ-ONLY. Do not modify files. Do not run devservers. Do not commit.
 

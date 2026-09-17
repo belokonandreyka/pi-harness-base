@@ -75,7 +75,7 @@ What lands in `~/.pi/agent/` and what to do with it:
 
 | File | Notes |
 |---|---|
-| `models.json` | from the template: replace `<GATEWAY_HOST>`; two providers, `gateway` (anthropic-messages) and `gateway-openai` (openai-responses); prices are list × 1.1 in the reference setup |
+| `models.json` | from the template: replace `<GATEWAY_HOST>`; two providers, `gateway` (anthropic-messages) and `gateway-openai` (openai-responses); prices are list × 1.1 in the reference setup. The Claude 5 entries carry `compat.forceAdaptiveThinking` and a `thinkingLevelMap`: without them pi falls back to budget-based thinking (medium = 8k tokens, `xhigh` silently becomes `high`) instead of the effort levels Copilot gets |
 | `settings.json` | `defaultProvider: gateway` (or `github-copilot` with `--copilot`), `defaultModel: claude-opus-5`, thinking `medium`; `packages` are added by `pi install` |
 | `AGENTS.md` | communication contract, roles, review rule, pane rules, context hygiene. Edit **Language** and **Aliases** |
 | `pi-lsp.json` | tsserver wiring for `@narumitw/pi-lsp` |
@@ -99,7 +99,7 @@ Sanity check: `pi`, ask it something about a repo, `/model` shows
 | `@ogulcancelik/pi-herdr` | npm package in `settings.json` | `herdr_layout`, `herdr_pane`, `herdr_agent` tools |
 | `collaborating-agents.json` | `profiles/orchestrator/` | `subagentLaunchMode: herdr-pane`, hidden displays, `triggerTurnOnSubagentCompletion: true`, `subagentAgentDir: ~/.pi-sub/agent` |
 | Subagent profile | `~/.pi-sub/agent/` | own `settings.json` (same gateway, none of the orchestrator-only extensions), a 2.4 KB `AGENTS.md` holding only the report contract, `context-ceiling.json` on at 120k |
-| Subagent types | `~/.pi/agents/*.toml` from `subagents/` | one file per type: model, reasoning, tool allowlist, system prompt |
+| Subagent types | `~/.pi/agents/*.toml` from `subagents/` | one file per type: model, reasoning, tool allowlist, system prompt. The fork forwards `reasoning` as `--thinking`; upstream parses it and then ignores it |
 | Skill `subagent-worktree-ops` | `skills/` | branch vs worktree, provisioning, model routing per task class, the verify and review turn that fires when a subagent completes |
 
 pi must itself run inside a Herdr pane for pane mode (it reads `HERDR_ENV`
@@ -116,6 +116,11 @@ Types worth using first:
 | `scout` | github-copilot/gemini-3.7-flash, low | read-only | fast codebase questions |
 | `haiku-mechanics` | github-copilot/claude-haiku-4.5 | edit | one or two file, exact-instruction diffs |
 | `haiku-recon`, `gemini-flash` | Haiku 4.5, Gemini Flash | read-only | recon reports, not code |
+
+Thinking levels that make sense per model: Opus 5 and Sonnet 5 (adaptive
+effort) `high` for implementers, `medium` for the orchestrator; GPT-5.6 Sol
+`xhigh` for review, `low` for recon; Haiku `low`; Gemini 3.7 Flash ignores the
+level entirely (`supportsReasoningEffort: false` in pi's catalog).
 | `browser-verify` | github-copilot/claude-opus-5 + `mcp` | read bash mcp | real-browser feature verification; needs an overlay browser skill |
 | `scout-flash`, `scout-sol` | worker with one model swapped | | A/B comparisons; skip at first |
 
