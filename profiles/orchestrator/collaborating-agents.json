@@ -1,6 +1,7 @@
 {
   "subagentLaunchMode": "herdr-pane",
   "preserveOrchestratorPane": true,
+  "subagentPanePlacement": "auto",
   "subagentLaunchDisplay": "hidden",
   "subagentProgressIntervalMs": 0,
   "subagentCompletionDisplay": "hidden",

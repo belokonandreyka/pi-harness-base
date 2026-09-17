@@ -97,7 +97,7 @@ Sanity check: `pi`, ask it something about a repo, `/model` shows
 |---|---|---|
 | `pi-collaborating-agents` fork | `~/projects/pi-collaborating-agents` | the `subagent` tool; the fork adds the `herdr-pane` launch mode and resolves types, sessions and config per profile |
 | `@ogulcancelik/pi-herdr` | npm package in `settings.json` | `herdr_layout`, `herdr_pane`, `herdr_agent` tools |
-| `collaborating-agents.json` | `profiles/orchestrator/` | `subagentLaunchMode: herdr-pane`, hidden displays, `triggerTurnOnSubagentCompletion: true`, `subagentAgentDir: ~/.pi-sub/agent` |
+| `collaborating-agents.json` | `profiles/orchestrator/` | `subagentLaunchMode: herdr-pane`, hidden displays, `triggerTurnOnSubagentCompletion: true`, `subagentAgentDir: ~/.pi-sub/agent`, `subagentPanePlacement: auto` (a new tab instead of a split when the terminal is under 100 columns, e.g. a phone over mosh) |
 | Subagent profile | `~/.pi-sub/agent/` | own `settings.json` (same gateway, none of the orchestrator-only extensions), a 2.4 KB `AGENTS.md` holding only the report contract, `context-ceiling.json` on at 120k |
 | Subagent types | `~/.pi/agents/*.toml` from `subagents/` | one file per type: model, reasoning, tool allowlist, system prompt. The fork forwards `reasoning` as `--thinking`; upstream parses it and then ignores it |
 | Skill `subagent-worktree-ops` | `skills/` | branch vs worktree, provisioning, model routing per task class, the verify and review turn that fires when a subagent completes |
