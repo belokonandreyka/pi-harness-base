@@ -703,6 +703,8 @@ def handoff_candidates(cache: dict, issues: dict[str, dict]) -> list[dict]:
         layer = ((entry.get("fields") or {}).get("blockedOn") or "").upper()
         if layer not in HANDOFF_LAYERS or k not in issues:
             continue
+        if ((entry.get("fields") or {}).get("readiness") or "").upper() == "REDIRECT":
+            continue  # already listed as a redirect; one proposal per ticket
         open_links = []
         for link in (issues[k].get("fields") or {}).get("issuelinks") or []:
             other = link.get("inwardIssue") or link.get("outwardIssue")

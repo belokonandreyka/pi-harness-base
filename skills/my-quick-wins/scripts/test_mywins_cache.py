@@ -157,6 +157,11 @@ class Handoff(unittest.TestCase):
         self.assertEqual([(x["key"], x["handoff"], [l["key"] for l in x["openLinks"]]) for x in c],
                          [("APP-1", False, ["SVC-1402"]), ("APP-3", False, ["SVC-1600"])])
 
+    def test_a_redirect_ticket_is_not_proposed_twice(self):
+        block = self.BLOCK.format(k="APP-1", on="BACKEND").replace("BLOCKED — the response DTO lacks the field", "REDIRECT — the whole diff is backend")
+        cache = {"tickets": {"APP-1": {"fields": mc.parse_scout_output(block)["APP-1"]["fields"]}}}
+        self.assertEqual(mc.handoff_candidates(cache, {"APP-1": issue("APP-1")}), [])
+
     def test_waiting_on_pm_or_nothing_is_not_a_handoff(self):
         self.assertEqual(self.cands({"APP-1": issue("APP-1")}, on="PM"), [])
         v = mc.parse_scout_output("### APP-1 — x\n**Complexity**: small\n**Blocked on**: —\n")
