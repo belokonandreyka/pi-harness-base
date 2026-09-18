@@ -211,13 +211,27 @@ def links_of(issue: dict) -> list[list[str]]:
     """[key, status] of every linked ticket, whatever the link type or direction.
     A '01 Relates' Portal/Retail task that gets Resolved is exactly the signal
     that lifts a "no endpoint" verdict."""
+    return sorted([r["key"], r["status"]] for r in related_of(issue))
+
+
+def related_of(issue: dict) -> list[dict]:
+    """Linked tickets and sub-tasks with status and summary. A sub-task is where
+    the other layer's share of a story usually lives: a backend contract
+    delivered as a sub-task is invisible in `issuelinks`."""
+    f = issue.get("fields") or {}
     out = []
-    for link in (issue.get("fields") or {}).get("issuelinks") or []:
+    for link in f.get("issuelinks") or []:
         other = link.get("inwardIssue") or link.get("outwardIssue")
         if other and other.get("key"):
-            st = ((other.get("fields") or {}).get("status") or {}).get("name") or ""
-            out.append([other["key"], st])
-    return sorted(out)
+            of = other.get("fields") or {}
+            out.append({"key": other["key"], "status": (of.get("status") or {}).get("name") or "",
+                        "summary": of.get("summary") or "", "type": (link.get("type") or {}).get("name") or ""})
+    for sub in f.get("subtasks") or []:
+        if sub.get("key"):
+            sf = sub.get("fields") or {}
+            out.append({"key": sub["key"], "status": (sf.get("status") or {}).get("name") or "",
+                        "summary": sf.get("summary") or "", "type": "sub-task"})
+    return out
 
 
 def sprint_of(issue: dict) -> str:
@@ -555,7 +569,7 @@ STRINGS = {
         "stored": "Stored verdicts: {n} ({keys}); tickets in cache: {total}",
         "unmatched": "; not in the filter, ignored: {keys}",
         "handoff": "  ↪ Hand off: {k} — waits on {layer}, no open blocker or related task for that team in Jira",
-        "handoffCheck": "  ? Check: {k} — waits on {layer}; open links: {links} — is one of them that team's task?",
+        "handoffCheck": "  ? Check: {k} — waits on {layer}; open: {links}; closed: {closed} — is one of them that team's task, and has it already delivered its share?",
         "labels": [("new", "new"), ("gone", "left the filter"), ("status", "status"), ("sprint", "sprint"),
                    ("comments", "new comments"), ("blockersClosed", "blockers closed"),
                    ("linksResolved", "linked tickets resolved"), ("deploys", "deploys"), ("branches", "branches")],
@@ -573,7 +587,7 @@ STRINGS = {
         "stored": "Збережено вердикти: {n} ({keys}); тікетів у кеші: {total}",
         "unmatched": "; не з фільтра, проігноровано: {keys}",
         "handoff": "  ↪ Передати: {k} — чекає на {layer}, у Jira немає відкритого блокера чи повʼязаної задачі на цю команду",
-        "handoffCheck": "  ? Перевірити: {k} — чекає на {layer}; відкриті лінки: {links} — чи є серед них задача цієї команди?",
+        "handoffCheck": "  ? Перевірити: {k} — чекає на {layer}; відкриті: {links}; закриті: {closed} — чи є серед них задача цієї команди і чи не зробила вона вже свою частину?",
         "labels": [("new", "нові"), ("gone", "зникли з фільтра"), ("status", "статус"), ("sprint", "спринт"),
                    ("comments", "нові коментарі"), ("blockersClosed", "блокери закрито"),
                    ("linksResolved", "повʼязані закрито"), ("deploys", "деплої"), ("branches", "гілки")],
@@ -705,18 +719,13 @@ def handoff_candidates(cache: dict, issues: dict[str, dict]) -> list[dict]:
             continue
         if ((entry.get("fields") or {}).get("readiness") or "").upper() == "REDIRECT":
             continue  # already listed as a redirect; one proposal per ticket
-        open_links = []
-        for link in (issues[k].get("fields") or {}).get("issuelinks") or []:
-            other = link.get("inwardIssue") or link.get("outwardIssue")
-            if not other or not other.get("key"):
-                continue
-            f = other.get("fields") or {}
-            status = (f.get("status") or {}).get("name") or ""
-            if status.lower() in TERMINAL_STATUSES:
-                continue
-            open_links.append({"key": other["key"], "status": status, "summary": f.get("summary") or "",
-                               "type": (link.get("type") or {}).get("name") or ""})
-        out.append({"key": k, "blockedOn": layer, "openLinks": open_links, "handoff": not open_links})
+        related = related_of(issues[k])
+        open_links = [r for r in related if r["status"].lower() not in TERMINAL_STATUSES]
+        closed_links = [r for r in related if r["status"].lower() in TERMINAL_STATUSES]
+        # A closed sub-task or link may be that team's delivered share, so only a
+        # ticket with nothing attached at all is an unconditional hand-off.
+        out.append({"key": k, "blockedOn": layer, "openLinks": open_links, "closedLinks": closed_links,
+                    "handoff": not related})
     return out
 
 
@@ -726,8 +735,10 @@ def format_handoff(cands: list[dict]) -> list[str]:
         if c["handoff"]:
             lines.append(S()["handoff"].format(k=c["key"], layer=c["blockedOn"]))
         else:
-            links = "; ".join(f"{l['key']} ({l['status']}) «{l['summary'][:60]}»" for l in c["openLinks"])
-            lines.append(S()["handoffCheck"].format(k=c["key"], layer=c["blockedOn"], links=links))
+            def show(items):
+                return "; ".join(f"{l['key']} ({l['status']}, {l['type']}) «{l['summary'][:60]}»" for l in items) or "—"
+            lines.append(S()["handoffCheck"].format(k=c["key"], layer=c["blockedOn"], links=show(c["openLinks"]),
+                                                    closed=show(c.get("closedLinks") or [])))
     return lines
 
 

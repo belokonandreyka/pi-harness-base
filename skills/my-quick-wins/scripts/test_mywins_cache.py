@@ -9,7 +9,7 @@ from pathlib import Path
 import mywins_cache as mc
 
 
-def issue(key, summary="Fix it", status="Open", description="do the thing", blockers=(), sprint="GS 378", relates=()):
+def issue(key, summary="Fix it", status="Open", description="do the thing", blockers=(), sprint="GS 378", relates=(), subtasks=()):
     return {
         "key": key,
         "fields": {
@@ -25,6 +25,8 @@ def issue(key, summary="Fix it", status="Open", description="do the thing", bloc
                 {"type": {"name": "01 Relates"}, "outwardIssue": {"key": rk, "fields": {"status": {"name": rs}}}}
                 for rk, rs in relates
             ],
+            "subtasks": [{"key": sk, "fields": {"status": {"name": ss}, "summary": "Portal: add the contract"}}
+                         for sk, ss in subtasks],
         },
     }
 
@@ -148,7 +150,8 @@ class Handoff(unittest.TestCase):
 
     def test_blocked_on_backend_without_any_open_link_is_a_handoff(self):
         c = self.cands({"APP-1": issue("APP-1"), "APP-2": issue("APP-2", relates=[("APP-9", "Resolved")])})
-        self.assertEqual([(x["key"], x["handoff"]) for x in c], [("APP-1", True), ("APP-2", True)])
+        self.assertEqual([(x["key"], x["handoff"]) for x in c], [("APP-1", True), ("APP-2", False)])
+        self.assertEqual([l["key"] for l in c[1]["closedLinks"]], ["APP-9"])
         self.assertIn("APP-1", mc.format_handoff(c)[0])
 
     def test_open_links_are_listed_for_the_coordinator_to_judge(self):
@@ -161,6 +164,13 @@ class Handoff(unittest.TestCase):
         block = self.BLOCK.format(k="APP-1", on="BACKEND").replace("BLOCKED — the response DTO lacks the field", "REDIRECT — the whole diff is backend")
         cache = {"tickets": {"APP-1": {"fields": mc.parse_scout_output(block)["APP-1"]["fields"]}}}
         self.assertEqual(mc.handoff_candidates(cache, {"APP-1": issue("APP-1")}), [])
+
+    def test_a_resolved_subtask_is_shown_as_possibly_delivered_work(self):
+        c = self.cands({"APP-1": issue("APP-1", subtasks=[("APP-706", "Resolved")])})
+        self.assertEqual((c[0]["handoff"], c[0]["openLinks"], [l["key"] for l in c[0]["closedLinks"]]),
+                         (False, [], ["APP-706"]))
+        self.assertIn("APP-706 (Resolved, sub-task)", mc.format_handoff(c)[0])
+        self.assertIn(["APP-706", "Resolved"], mc.links_of(issue("APP-1", subtasks=[("APP-706", "Resolved")])))
 
     def test_waiting_on_pm_or_nothing_is_not_a_handoff(self):
         self.assertEqual(self.cands({"APP-1": issue("APP-1")}, on="PM"), [])

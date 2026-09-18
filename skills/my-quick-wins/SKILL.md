@@ -138,12 +138,14 @@ JQL='<filter jql>'
 curl -sSG -u "$JIRA_GIT_HOOK_USERNAME:$JIRA_GIT_HOOK_TOKEN" \
   -H "Accept: application/json" \
   --data-urlencode "jql=$JQL" \
-  --data-urlencode "fields=summary,status,priority,updated,parent,components,labels,description,customfield_10007,issuetype,issuelinks" \
+  --data-urlencode "fields=summary,status,priority,updated,parent,components,labels,description,customfield_10007,issuetype,issuelinks,subtasks" \
   --data-urlencode "maxResults=100" \
   "$BASE/search/jql" > /tmp/mywins-<runid>/issues.json
 ```
 
-`issuelinks` feeds both the blocker triage and the cache fingerprint. Keep
+`issuelinks` and `subtasks` feed the blocker triage, the hand-off check and
+the cache fingerprint (another layer's share of a story is usually a
+sub-task, which `issuelinks` does not show). Keep
 the raw response in `/tmp/mywins-<runid>/issues.json` — step 5b reads it.
 
 Paginate via `nextPageToken` if `isLast` is false. A personal backlog rarely
@@ -188,7 +190,9 @@ curl -sS -u "$JIRA_GIT_HOOK_USERNAME:$JIRA_GIT_HOOK_TOKEN" \
 ```
 
 The description is already in `issues.json`; write it to
-`/tmp/mywins-<runid>/<KEY>.json` for the scout (`{summary, description}`).
+`/tmp/mywins-<runid>/<KEY>.json` for the scout (`{summary, description,
+related}`, where `related` is every linked ticket and sub-task as
+`{key, type, status, summary}`).
 
 Walk ADF (`content[].content[].text`) for both — do not dump raw JSON.
 
@@ -277,6 +281,7 @@ Tickets (description + latest comments in /tmp/mywins-<runid>/<KEY>.*.json,
 ADF; walk content[].content[].text):
 
 - <KEY-1> — <summary>
+  related: <KEY> (<status>, <link type | sub-task>) «<summary>»; … or «—»
 - <KEY-2> — <summary>
 - ...
 
@@ -339,8 +344,15 @@ For EACH ticket produce:
    `EXTERNAL` (a vendor, an authority), or `—` for nothing. After a dash,
    what exactly is missing, in one sentence the layer owner understands
    without context. Fill it for `BLOCKED`, `NEEDS CLARIFICATION` and
-   `REDIRECT` alike. Whether Jira has a blocker or a related task is not
-   your concern; the cache script checks `issuelinks`.
+   `REDIRECT` alike. Look at `related` and the comments first: a closed
+   sub-task or link for that layer, or its owner answering "provided / done /
+   deployed", means the layer has ALREADY delivered its share. Confirm it in
+   the code (`git log --grep <sub-task key>`, the endpoint on the integration
+   branch); `Blocked on` is then only what is STILL missing. If the main scope
+   can be built and one acceptance criterion or a product decision is open,
+   that is `PM`, not `BACKEND`/`SERVICE`, and readiness is `READY` for the
+   main scope with a note about the open criterion. Whether a related task
+   formally covers the blocker is checked by the cache script.
 
 Format — one Markdown block per ticket (the `### KEY — …` heading is
 mandatory, the cache splits the output on it):
@@ -509,6 +521,11 @@ team's task, propose the reassignment:
 
 - The owner comes from the ownership document among the context files, by
   project and layer; git authors of the path when nothing is listed.
+- A closed sub-task or link of that team means it has already delivered
+  something. Do not write "nobody tracks this": say what was delivered and
+  what is still missing, and propose a comment in the existing thread or on
+  that sub-task instead of a reassignment, unless the missing part is new
+  work that needs its own ticket.
 - A linked ticket counts as that team's task when its summary or type names
   the layer or it is assigned to the layer owner. If such a task exists the
   ticket is simply blocked: list it under 7e and, when the link type is not
