@@ -54,6 +54,7 @@ SCOUT = """Вступ від скаута.
 
 ### APP-1458 — Некоректне використання signals
 **Складність**: small
+**Шар**: UI — власник: me
 **Скоуп**: `app/Reports4/edit-report/edit-report.component.ts` + ще два
 **Шляхи**: web-app: site/Scripts/app/Reports4, site/Scripts/app/Shared2; pay-sdk: variants/javascript/src
 **Ризики**: - none
@@ -62,6 +63,7 @@ SCOUT = """Вступ від скаута.
 
 ### PAY-5747 — Google Pay button
 **Complexity**: medium
+**Layer**: UI — owner: me
 **Scope**: not in web-app
 **Paths**: pay-sdk: variants/javascript/src/PaymentOptions
 **Readiness**: NEEDS CLARIFICATION — SDK version unknown
@@ -135,6 +137,15 @@ class Fingerprint(unittest.TestCase):
 
 
 class ScoutParsing(unittest.TestCase):
+    def test_redirect_verdict_with_a_foreign_layer(self):
+        v = mc.parse_scout_output(
+            "### SVC-1711 — Server error on finalize\n**Complexity**: small\n"
+            "**Layer**: BACKEND — owner: backend lead (backup: second dev)\n"
+            "**Paths**: web-app: api/Models/Binder\n"
+            "**Readiness**: REDIRECT — the whole diff is backend\n**Quick-win**: no — not our layer\n")
+        f = v["SVC-1711"]["fields"]
+        self.assertEqual((f["layer"], f["readiness"], f["quickWin"]), ("BACKEND", "REDIRECT", "no"))
+
     def test_blocks_and_fields(self):
         v = mc.parse_scout_output(SCOUT)
         self.assertEqual(sorted(v), ["APP-1458", "PAY-5747"])
@@ -142,6 +153,7 @@ class ScoutParsing(unittest.TestCase):
         self.assertEqual(f["complexity"], "small")
         self.assertEqual(f["readiness"], "READY")
         self.assertEqual(f["quickWin"], "yes")
+        self.assertEqual(f["layer"], "UI")
         self.assertEqual(f["paths"], {"web-app": ["site/Scripts/app/Reports4", "site/Scripts/app/Shared2"],
                                       "pay-sdk": ["variants/javascript/src"]})
         self.assertEqual(v["PAY-5747"]["fields"]["readiness"], "NEEDS CLARIFICATION")
@@ -269,6 +281,12 @@ class PlanAndStore(unittest.TestCase):
         p = self.plan()
         self.assertEqual(p["tickets"]["PAY-5747"]["reasons"], ["git:1 commit(s) mention linked SVC-1600 in web-app"])
         self.assertEqual(p["tickets"]["APP-1458"]["reasons"], [])
+
+    def test_verdict_without_a_layer_rescouts_once(self):
+        self.store()
+        key = next(k for k, e in self.cache["tickets"].items() if (e.get("fields") or {}).get("layer"))
+        del self.cache["tickets"][key]["fields"]["layer"]
+        self.assertEqual(self.plan()["tickets"][key]["reasons"], ["cache-upgrade:layer"])
 
     def test_cache_written_before_a_part_existed_rescouts_once(self):
         self.store()

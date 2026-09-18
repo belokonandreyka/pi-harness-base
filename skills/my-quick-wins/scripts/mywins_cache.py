@@ -434,6 +434,8 @@ def build_plan(issues: dict[str, dict], comments_by_key: dict[str, list[dict]], 
             detail = {"scoutedAt": prev.get("scoutedAt"), "block": prev.get("block"), "fields": prev.get("fields")}
             if not prev.get("block"):
                 reasons.append("no-verdict")
+            elif not (prev.get("fields") or {}).get("layer"):
+                reasons.append("cache-upgrade:layer")  # verdict predates the layer/owner question
             for part, val in snap["fpParts"].items():
                 prev_parts = prev.get("fpParts") or {}
                 if part not in prev_parts:
@@ -615,6 +617,10 @@ FIELD_RES = {
     "readiness": re.compile(r"^\*\*(?:Readiness|Готовність)\*\*:\s*`?([A-Z][A-Z ]*[A-Z])", re.M),
     "quickWin": re.compile(r"^\*\*Quick-win\*\*:\s*`?(yes|no|так|ні)", re.M | re.I),
     "paths": re.compile(r"^\*\*(?:Paths|Шляхи)\*\*:\s*(.+)$", re.M),
+    # Where the diff lands (UI / BACKEND / SERVICE / STYLES / MIXED, or whatever
+    # layer names the team uses). A READY fix in someone else's layer is a
+    # redirect, not a quick win.
+    "layer": re.compile(r"^\*\*(?:Layer|Шар)\*\*:\s*`?([A-Z]+)", re.M),
 }
 QUICK_WIN_VALUES = {"yes": "yes", "так": "yes", "no": "no", "ні": "no"}
 

@@ -266,7 +266,8 @@ a personal triage for <user>.
 LANGUAGE: write all prose in <cfg.language>. Keep every bold field label
 below (**Complexity**, **Scope**, **Paths**, **Risks**, **Readiness**,
 **Quick-win**) and the enumerated values (trivial/small/medium/large/xl,
-READY/NEEDS CLARIFICATION/BLOCKED/STALE, yes/no) exactly as written.
+READY/NEEDS CLARIFICATION/BLOCKED/STALE/REDIRECT, yes/no, the layer names)
+exactly as written.
 
 READ FIRST:
 <cfg.contextFiles, one per line>
@@ -287,7 +288,11 @@ For EACH ticket produce:
    reference implementation nearby; does it need a backend contract change.
 3. **Risks**: 1-3 bullets (generated contract, screenshot tests,
    cross-cutting impact, dependency on an external service).
-4. **Readiness**: `READY` / `NEEDS CLARIFICATION` / `BLOCKED` / `STALE`.
+4. **Readiness**: `READY` / `NEEDS CLARIFICATION` / `BLOCKED` / `STALE` /
+   `REDIRECT`. `REDIRECT` — the cause is found but the diff lands outside the
+   user's layer (item 7): the ticket goes to that layer's owner. A ticket in
+   the user's filter is not proof the fix is theirs, and "the code is in our
+   repository" is not "our layer" when several teams share the repository.
    If NEEDS CLARIFICATION — name what is missing in one line (no draft
    comment; this is a quick-win triage).
    Before writing BLOCKED because of a backend contract, check the backend
@@ -305,6 +310,8 @@ For EACH ticket produce:
    - complexity trivial or small;
    - readiness READY;
    - scope does not depend on a PM or backend answer;
+   - the layer is the user's own; any other layer is quick-win `no` and
+     readiness `REDIRECT`;
    - no unresolved question in the comments from anyone on the team.
 6. **Paths**: a machine line for the cache — folders (not files) to watch
    to know the verdict went stale. Format strictly
@@ -316,15 +323,26 @@ For EACH ticket produce:
    backend commits often carry no ticket key, and the cache catches them
    only by path. If the code is not in our repos — `Paths: —`.
 
+7. **Layer**: where the diff lands — `UI`, `BACKEND`, `SERVICE` (another
+   repository or a vendor adapter), `STYLES` (shared styles), `MIXED` (name
+   both) — then, after a dash, that layer's owner: from the ownership
+   document among the context files; when the project is not listed there,
+   the recent authors from
+   `git log --format=%an -- <path> | sort | uniq -c | sort -rn | head -3`.
+   For `MIXED` say which part is whose and whether the user's part can ship
+   alone. The user's own layer is stated in the context files; when it is
+   not, assume `UI` is theirs and say that you assumed it.
+
 Format — one Markdown block per ticket (the `### KEY — …` heading is
 mandatory, the cache splits the output on it):
 
 ### <KEY> — <short title>
 **Complexity**: trivial/small/medium/large/xl
+**Layer**: UI | BACKEND | SERVICE | STYLES | MIXED — owner: <name> (backup <name>)
 **Scope**: ...
 **Paths**: <repo>: <dir>, <dir>; <repo>: <dir>
 **Risks**: ...
-**Readiness**: READY | NEEDS CLARIFICATION | BLOCKED | STALE (+ short why)
+**Readiness**: READY | NEEDS CLARIFICATION | BLOCKED | STALE | REDIRECT (+ short why)
 **Quick-win**: yes/no — <why>
 
 Do not retell the description — it is already in the files. Focus on the
@@ -392,6 +410,9 @@ yesterday.
 
 Highlight up to **5** tickets from the working set that satisfy:
 
+- Never a `REDIRECT` ticket, and never one whose layer is not the user's,
+  whatever the scout wrote in `Quick-win`. List those first, under a
+  `## ↪ Redirect` heading, one line each: layer, owner, the cause in a clause.
 - **Primary bucket** (current sprint): Quick-win = yes AND sprint =
   current-active.
 - **Bonus bucket** (future sprint / no sprint): Quick-win = yes AND
@@ -417,9 +438,9 @@ One row per non-skipped ticket, current sprint first (priority DESC, then
 updated DESC), then future/no-sprint (same sort):
 
 ```
-| Key | Prio | Sprint | Status | Upd | Complexity | Readiness | Summary |
-|-----|------|--------|--------|-----|------------|-----------|---------|
-| APP-1666 | Major | S 378 | Open | 2d ago | small | READY | Autologout ... |
+| Key | Prio | Sprint | Status | Upd | Complexity | Layer | Readiness | Summary |
+|-----|------|--------|--------|-----|------------|-------|-----------|---------|
+| APP-1666 | Major | S 378 | Open | 2d ago | small | UI | READY | Autologout ... |
 ```
 
 Rules: `Upd` — `today HH:MM` / `yest HH:MM` / `Nd ago`; `Sprint` — full
@@ -458,6 +479,13 @@ None. The skill reports and recommends — the user decides.
 
 - **Read-only.** Do NOT comment, transition, reassign, or push from within
   this skill.
+- **A ticket in the filter is not proof it is the user's to fix.** If they
+  say "take KEY" for a ticket whose layer is not theirs (or that has no layer
+  yet), name the layer and its owner and ask before creating a branch. The
+  case this rule comes from: a backend fix sat in a frontend developer's
+  filter, the scout called it READY "in our repository", it topped the quick
+  wins, and the coordinator implemented and reviewed a change that belonged
+  to another team.
 - **Do NOT auto-spawn implementation subagents.** A quick-win recommendation
   is an invitation. The user says "take KEY-N", and a separate flow starts.
 - **Do NOT run dev servers, test suites, or `git status`** as part of the

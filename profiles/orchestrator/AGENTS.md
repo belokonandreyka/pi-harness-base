@@ -121,6 +121,13 @@ a longer string, a path, an identifier, or code is not an alias.
   The child resumes the same session holding everything it has already worked out;
   a fresh spawn starts from zero and rediscovers the same blocker. Answer even when
   the answer is "your call" — a parked child stays parked until you reply.
+- **Whose layer is the diff in?** Before creating a branch for a ticket, name
+  the layer the diff will land in (frontend, backend or contract layer,
+  another service, shared styles) and who owns it (your overlay's ownership
+  skill; git authors of the path when nothing is listed). If that is not the
+  user's layer, stop and say so with the owner's name, even when the user
+  said "start with KEY": a ticket in their filter and a fix in a repository
+  they work in do not make it theirs.
 
 ## Review
 
