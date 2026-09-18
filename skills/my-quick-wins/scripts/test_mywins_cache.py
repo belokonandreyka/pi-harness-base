@@ -136,6 +136,33 @@ class Fingerprint(unittest.TestCase):
         self.assertEqual(s["seen"]["sprint"], "GS 379")
 
 
+class Handoff(unittest.TestCase):
+    BLOCK = ("### {k} — needs a field\n**Complexity**: small\n**Layer**: UI — owner: me\n"
+             "**Readiness**: BLOCKED — the response DTO lacks the field\n**Blocked on**: {on} — field fee in the DTO\n"
+             "**Quick-win**: no — waits on the backend\n")
+
+    def cands(self, issues, on="BACKEND"):
+        cache = {"tickets": {k: {"fields": mc.parse_scout_output(self.BLOCK.format(k=k, on=on))[k]["fields"]}
+                             for k in issues}}
+        return mc.handoff_candidates(cache, issues)
+
+    def test_blocked_on_backend_without_any_open_link_is_a_handoff(self):
+        c = self.cands({"APP-1": issue("APP-1"), "APP-2": issue("APP-2", relates=[("APP-9", "Resolved")])})
+        self.assertEqual([(x["key"], x["handoff"]) for x in c], [("APP-1", True), ("APP-2", True)])
+        self.assertIn("APP-1", mc.format_handoff(c)[0])
+
+    def test_open_links_are_listed_for_the_coordinator_to_judge(self):
+        c = self.cands({"APP-1": issue("APP-1", blockers=[("SVC-1402", "Open")]),
+                        "APP-3": issue("APP-3", relates=[("SVC-1600", "In Progress")])}, on="SERVICE")
+        self.assertEqual([(x["key"], x["handoff"], [l["key"] for l in x["openLinks"]]) for x in c],
+                         [("APP-1", False, ["SVC-1402"]), ("APP-3", False, ["SVC-1600"])])
+
+    def test_waiting_on_pm_or_nothing_is_not_a_handoff(self):
+        self.assertEqual(self.cands({"APP-1": issue("APP-1")}, on="PM"), [])
+        v = mc.parse_scout_output("### APP-1 — x\n**Complexity**: small\n**Blocked on**: —\n")
+        self.assertNotIn("blockedOn", v["APP-1"]["fields"])
+
+
 class ScoutParsing(unittest.TestCase):
     def test_redirect_verdict_with_a_foreign_layer(self):
         v = mc.parse_scout_output(

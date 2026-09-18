@@ -554,6 +554,8 @@ STRINGS = {
         "branchMoved": "{k}: origin/{k} moved in {repo}",
         "stored": "Stored verdicts: {n} ({keys}); tickets in cache: {total}",
         "unmatched": "; not in the filter, ignored: {keys}",
+        "handoff": "  ↪ Hand off: {k} — waits on {layer}, no open blocker or related task for that team in Jira",
+        "handoffCheck": "  ? Check: {k} — waits on {layer}; open links: {links} — is one of them that team's task?",
         "labels": [("new", "new"), ("gone", "left the filter"), ("status", "status"), ("sprint", "sprint"),
                    ("comments", "new comments"), ("blockersClosed", "blockers closed"),
                    ("linksResolved", "linked tickets resolved"), ("deploys", "deploys"), ("branches", "branches")],
@@ -570,6 +572,8 @@ STRINGS = {
         "branchMoved": "{k}: origin/{k} у {repo} оновилась",
         "stored": "Збережено вердикти: {n} ({keys}); тікетів у кеші: {total}",
         "unmatched": "; не з фільтра, проігноровано: {keys}",
+        "handoff": "  ↪ Передати: {k} — чекає на {layer}, у Jira немає відкритого блокера чи повʼязаної задачі на цю команду",
+        "handoffCheck": "  ? Перевірити: {k} — чекає на {layer}; відкриті лінки: {links} — чи є серед них задача цієї команди?",
         "labels": [("new", "нові"), ("gone", "зникли з фільтра"), ("status", "статус"), ("sprint", "спринт"),
                    ("comments", "нові коментарі"), ("blockersClosed", "блокери закрито"),
                    ("linksResolved", "повʼязані закрито"), ("deploys", "деплої"), ("branches", "гілки")],
@@ -621,7 +625,10 @@ FIELD_RES = {
     # layer names the team uses). A READY fix in someone else's layer is a
     # redirect, not a quick win.
     "layer": re.compile(r"^\*\*(?:Layer|Шар)\*\*:\s*`?([A-Z]+)", re.M),
+    # Which side the ticket waits on: BACKEND / SERVICE / PM / EXTERNAL ("—" = nothing).
+    "blockedOn": re.compile(r"^\*\*(?:Blocked on|Блокує)\*\*:\s*`?([A-Z]+)", re.M),
 }
+HANDOFF_LAYERS = {"BACKEND", "PORTAL", "SERVICE"}
 QUICK_WIN_VALUES = {"yes": "yes", "так": "yes", "no": "no", "ні": "no"}
 
 
@@ -686,6 +693,42 @@ def store(cache: dict, issues: dict[str, dict], comments_by_key: dict[str, list[
     return {"stored": sorted(verdicts), "unmatched": sorted(set(verdicts) - set(issues)), "tickets": len(tickets)}
 
 
+def handoff_candidates(cache: dict, issues: dict[str, dict]) -> list[dict]:
+    """Tickets the scout says wait on another team's layer. With no open linked
+    ticket nobody on that side is tracking the work, so the ticket should go to
+    the layer owner with a comment; with open links the coordinator checks
+    whether one of them is that team's task before proposing the same."""
+    out = []
+    for k, entry in sorted((cache.get("tickets") or {}).items()):
+        layer = ((entry.get("fields") or {}).get("blockedOn") or "").upper()
+        if layer not in HANDOFF_LAYERS or k not in issues:
+            continue
+        open_links = []
+        for link in (issues[k].get("fields") or {}).get("issuelinks") or []:
+            other = link.get("inwardIssue") or link.get("outwardIssue")
+            if not other or not other.get("key"):
+                continue
+            f = other.get("fields") or {}
+            status = (f.get("status") or {}).get("name") or ""
+            if status.lower() in TERMINAL_STATUSES:
+                continue
+            open_links.append({"key": other["key"], "status": status, "summary": f.get("summary") or "",
+                               "type": (link.get("type") or {}).get("name") or ""})
+        out.append({"key": k, "blockedOn": layer, "openLinks": open_links, "handoff": not open_links})
+    return out
+
+
+def format_handoff(cands: list[dict]) -> list[str]:
+    lines = []
+    for c in cands:
+        if c["handoff"]:
+            lines.append(S()["handoff"].format(k=c["key"], layer=c["blockedOn"]))
+        else:
+            links = "; ".join(f"{l['key']} ({l['status']}) «{l['summary'][:60]}»" for l in c["openLinks"])
+            lines.append(S()["handoffCheck"].format(k=c["key"], layer=c["blockedOn"], links=links))
+    return lines
+
+
 # ---------------------------------------------------------------- cli
 
 def main(argv=None) -> int:
@@ -741,6 +784,8 @@ def main(argv=None) -> int:
     if res["unmatched"]:
         msg += S()["unmatched"].format(keys=", ".join(res["unmatched"]))
     print(msg)
+    for line in format_handoff(handoff_candidates(cache, issues)):
+        print(line)
     return 0
 
 

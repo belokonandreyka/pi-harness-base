@@ -333,6 +333,15 @@ For EACH ticket produce:
    alone. The user's own layer is stated in the context files; when it is
    not, assume `UI` is theirs and say that you assumed it.
 
+8. **Blocked on**: whose part the ticket waits on — `BACKEND` (a missing
+   field, endpoint or fix on the server side of this repository), `SERVICE`
+   (another repository, a vendor adapter), `PM` (an unanswered question),
+   `EXTERNAL` (a vendor, an authority), or `—` for nothing. After a dash,
+   what exactly is missing, in one sentence the layer owner understands
+   without context. Fill it for `BLOCKED`, `NEEDS CLARIFICATION` and
+   `REDIRECT` alike. Whether Jira has a blocker or a related task is not
+   your concern; the cache script checks `issuelinks`.
+
 Format — one Markdown block per ticket (the `### KEY — …` heading is
 mandatory, the cache splits the output on it):
 
@@ -343,6 +352,7 @@ mandatory, the cache splits the output on it):
 **Paths**: <repo>: <dir>, <dir>; <repo>: <dir>
 **Risks**: ...
 **Readiness**: READY | NEEDS CLARIFICATION | BLOCKED | STALE | REDIRECT (+ short why)
+**Blocked on**: BACKEND | SERVICE | PM | EXTERNAL | — (+ what exactly is missing)
 **Quick-win**: yes/no — <why>
 
 Do not retell the description — it is already in the files. Focus on the
@@ -369,6 +379,16 @@ python3 <skill dir>/scripts/mywins_cache.py store \
   --comments-dir /tmp/mywins-<runid> \
   --scout /tmp/mywins-<runid>/scout-1.md --scout /tmp/mywins-<runid>/scout-2.md
 ```
+
+After the "Stored verdicts" line `store` prints hand-off candidates, from the
+scouts' `**Blocked on**` field and the tickets' open `issuelinks`:
+
+```
+  ↪ Hand off: APP-1437 — waits on BACKEND, no open blocker or related task for that team in Jira
+  ? Check: APP-711 — waits on SERVICE; open links: SVC-705 (Open) «Adapter: return signer order» — is one of them that team's task?
+```
+
+They feed section 7e2.
 
 Run it with no `--scout` when nothing was re-scouted — it still records
 today's statuses, comments, deploys, branch tips and integration-ref shas,
@@ -470,6 +490,33 @@ No draft texts — this skill is about quick wins, not comment writing.
 - **APP-1437** — BLOCKED by APP-1439 (owner). Ping if needed for the sprint.
 - **APP-7094** — NEEDS CLARIFICATION from the PM about the composite key API. The question is already on the ticket.
 ```
+
+#### 7e2. Hand off to another team (only if `store` printed candidates)
+
+A ticket that waits on another team's layer with nobody on that side
+tracking it will wait forever in the user's filter. For every `↪ Hand off`
+line, and for every `? Check` line where none of the open links is that
+team's task, propose the reassignment:
+
+```
+## 📤 Hand off
+
+- **APP-1437** → <backend owner> (BACKEND): the response DTO lacks
+  `thirdPartyFee`; the ticket has neither a blocker nor a related backend
+  task. Suggest reassigning with a comment about that field. Say "hand off
+  APP-1437".
+```
+
+- The owner comes from the ownership document among the context files, by
+  project and layer; git authors of the path when nothing is listed.
+- A linked ticket counts as that team's task when its summary or type names
+  the layer or it is assigned to the layer owner. If such a task exists the
+  ticket is simply blocked: list it under 7e and, when the link type is not
+  "is blocked by", say that it should be.
+- `REDIRECT` tickets are already listed under `## ↪ Redirect`; do not repeat.
+- The line carries the substance of the comment in a clause, not a draft.
+  Only after the user says "hand off KEY" write the full comment, show it,
+  wait for approval of the exact text, then post it and reassign.
 
 #### 7f. Questions to the user
 
