@@ -102,9 +102,21 @@ export default function contextCeilingExtension(pi: ExtensionAPI): void {
     updateStatus(ctx);
   }
 
+  // Footer gauge: live context against the ceiling (`ctx 96k/160k`), so the
+  // distance to the next compaction is visible without a command.
   function updateStatus(ctx: any): void {
     if (!ctx?.hasUI || typeof ctx.ui?.setStatus !== "function") return;
-    const text = config.enabled ? `ctx≤${Math.round(config.ceilingTokens / 1000)}k` : undefined;
+    let text: string | undefined;
+    if (config.enabled) {
+      let tokens: number | null = null;
+      try {
+        tokens = ctx.getContextUsage?.()?.tokens ?? null;
+      } catch {
+        tokens = null;
+      }
+      const k = (n: number) => `${Math.round(n / 1000)}k`;
+      text = tokens === null ? `ctx ?/${k(config.ceilingTokens)}` : `ctx ${k(tokens)}/${k(config.ceilingTokens)}`;
+    }
     const key = text ?? "";
     if (key === lastStatus) return;
     lastStatus = key;
@@ -116,6 +128,10 @@ export default function contextCeilingExtension(pi: ExtensionAPI): void {
       apply(ctx);
     });
   }
+
+  pi.on("turn_end", (_event: any, ctx: any) => {
+    updateStatus(ctx);
+  });
 
   pi.on("session_compact", (_event: any, ctx: any) => {
     if (config.enabled && ctx?.hasUI) {

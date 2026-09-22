@@ -141,8 +141,21 @@ which of them actually load, and `writing-skills` explains what a zero means.
 ## Tests
 
 ```bash
-bun test
+bun test                                   # unit tests, no pi process
+bun test ./test/e2e/context-guard.e2e.ts   # end to end through the real pi CLI, no API
 ```
+
+The end-to-end tests drive `pi --mode rpc` with a scripted model
+(`test/harness/fake-provider.ts`): it reports usage that grows with the number
+of messages, so pi's own threshold compaction and the context-ceiling clamp
+fire as they would with a real model, and it answers deterministically
+(`view_context` → `handoff_note` when warned → `DONE` once it sees its note in
+the compaction summary). Two things a scripted provider needs that are easy to
+miss: `baseUrl` and `apiKey` must both be set even though nothing is ever sent,
+and its answers must carry real text bulk, because pi decides what a
+compaction may cut from its own character estimate of the entries, not from
+the usage the model reports. e2e files end in `.e2e.ts` so `bun test` alone
+does not pick them up.
 
 ## read-guard
 
@@ -186,9 +199,58 @@ profile's settings.json (pi default 16384).
 | `<agent-dir>/context-ceiling.json` `{ "enabled", "ceilingTokens", "reserveTokens" }` | profile default |
 | `/ceiling [tokens\|on\|off\|status]` | change it in a running session; `off` restores the real window |
 
-Enabled at 120k in `~/.pi-sub/agent` (subagents); registered but disabled in
+Enabled at 160k in `~/.pi-sub/agent` (subagents; 120k left only 25–40k of room
+after a compaction, measured 2026-09-21); registered but disabled in
 `~/.pi/agent` (orchestrator) so `/ceiling on` or `/ceiling 150k` turns it on
-for one session. Tests: `bun test extensions/context-ceiling`.
+for one session. While enabled the footer shows the live gauge, `ctx 96k/160k`,
+refreshed after every turn. Tests: `bun test extensions/context-ceiling`.
+
+## context-guard
+
+Lets the model see its own context gauge, warns it before pi's automatic
+compaction, and carries its own handoff note across the cut. The idea comes from
+[disler/self-compact-pi-agent](https://github.com/disler/self-compact-pi-agent);
+what is deliberately left out is its tool lock and its cancelling of pi's own
+compaction, so the ceiling above still guarantees a compaction even when the
+model ignores every warning.
+
+**Why.** pi's compaction is silent from the model's side. It fires at
+`contextWindow - reserveTokens` (the context-ceiling clamp counts), replaces
+everything but the most recent messages with a summary written by a separate
+request, and that summary tends to lose what the agent was about to do next;
+the agent then re-reads files and redoes finished steps. Measured 2026-09-21:
+12 of 163 subagent sessions compacted, one of them three times in ten minutes
+with the summary growing from 8k to 23k characters.
+
+**What the model gets.**
+- `view_context` tool: used tokens, the compaction limit, tokens left, whether
+  a note is saved, as JSON.
+- From `warnTokensBefore` (30k) under the limit, every model call carries a
+  transient `[context-guard]` message with live numbers asking for a handoff
+  note. It is appended last, so the cached prefix is untouched, and it is never
+  persisted.
+- `handoff_note` tool: DONE / IN PROGRESS / decisions / NEXT ACTION, up to
+  `maxNoteChars` (6000). Stored as a session entry, so a restart keeps it.
+
+**What happens at compaction.** The extension runs pi's own summariser (same
+model, same split-turn handling, `cacheRetention: "none"`) with extra rules: no
+work marked done without a confirming tool result, keep exact paths and
+commands, merge the previous summary and stay under `maxSummaryChars` (12000).
+The saved note is appended to the summary verbatim under a "Handoff note"
+heading and the note is cleared. If the summariser fails, pi's default
+compaction runs instead. `session_before_compact` is the only hook that changes
+anything; pi's threshold logic still decides *when*.
+
+| Source | Effect |
+|---|---|
+| `<agent-dir>/context-guard.json` `{ enabled, warnTokensBefore, maxNoteChars, maxSummaryChars }` | profile defaults |
+| `<agent-dir>/context-guard-summary.md` | replaces the extra summary rules (`{{maxSummaryChars}}` is substituted) |
+| `/context-guard` | prints the gauge |
+
+Enabled in `~/.pi-sub/agent` (subagents, limit 160k from the ceiling) and in
+`~/.pi/agent` (orchestrator: with the 1M window the warning never fires unless
+`/ceiling` is on, but the summary rules apply to every `/compact`). Tests:
+`bun test extensions/context-guard`.
 
 ## tool-result-offload
 
@@ -268,3 +330,58 @@ stored before 2026-09-05 are ~2.7× too high. The status is shown only while
 the current model is on a gateway provider (`statusOnlyForGatewayModel`), so a
 Copilot worker sees its credits and not the gateway line; the ledger is kept
 either way. Enabled in both profiles.
+
+## cache-telemetry
+
+Records what the prompt cache actually did, so cache warming (pi >= 0.86) and
+compaction settings can be judged on a few days of traffic instead of one test.
+
+**What is logged.** One JSONL line per provider response — input / cache-read /
+cache-write tokens, cost, and the pause since the previous response in the same
+run — and one line per `cache_warming_decision` with pi's verdict and its own
+cost estimates. No prompts, tool arguments or file names. The handler returns
+nothing, so it observes warming decisions without changing them.
+
+**Where.** `<agent-dir>/telemetry/cache-usage.jsonl`, one file per profile;
+subagents run in their own profile, so their traffic lands in that profile's log.
+
+**Report.** `/cache-stats [days]` (default 7) reads every `~/.pi*/agent` log and
+prints, per profile and model: share of prompt tokens served from cache, pauses
+of 270 s or more that still hit the cache versus those that lost it (and how many
+tokens were re-sent), misses with a short pause (the prefix itself changed:
+compaction, model switch, prompt edit), and warming spend next to pi's estimate
+of what was at risk.
+
+Warming needs a cache lifetime for the model: add
+`"promptCache": { "short": 280, "long": 3300 }` to custom or gateway models in
+`models.json`; pi only ships lifetimes for direct Anthropic.
+
+## cache-warm-policy
+
+Overrides pi's idle cache-warming verdict where its fixed 15% "another request
+will arrive in time" estimate is known to be wrong.
+
+**Why.** On an orchestrator that delegates to subagents, every lost cache of a
+measured day came from idle waits — the orchestrator ends its turn and sleeps
+until a subagent reports back or the user answers — and the re-billed prefixes
+were about half of that day's orchestrator spend. `streaming` mode never warms
+while idle, and `idle` mode declines because 15% of the miss cost does not cover
+a refresh. While a subagent is running the real probability is close to 100%.
+
+**Rules** (idle only; during an active run pi's own verdict stands):
+- a subagent started by this pi process is still running → warm;
+- otherwise warm for the first `idleMinutes` (15) after the last real request,
+  then stop;
+- context under `minContextTokens` (30000) → leave it to pi.
+
+Running children are read from pi-collaborating-agents run records
+(`<agent-dir>/collaborating-agents/runs/*.json`: `status: "running"`, matching
+`parentPid`, younger than `childMaxAgeMinutes`); without that directory the rule
+is simply never true.
+
+**Setup.** `"cacheWarming": "idle"` in the profile's settings.json, a
+`promptCache` lifetime on the model, and this extension listed **after**
+cache-telemetry (the last handler that returns an action wins). Optional
+`<agent-dir>/cache-warm-policy.json` overrides the numbers. pi itself ends idle
+warming 30 minutes after the last real request. Each override is logged as
+`warm_override` in the cache-telemetry log and shows up in `/cache-stats`.

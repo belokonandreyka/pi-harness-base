@@ -73,7 +73,11 @@ describe("context-ceiling wiring", () => {
     const { handlers, ctx, model, statuses } = setup({ enabled: true, ceilingTokens: 120000 });
     handlers.get("session_start")?.({}, ctx);
     expect(model.contextWindow).toBe(120000 + DEFAULT_RESERVE_TOKENS);
-    expect(statuses.at(-1)).toEqual(["ceiling", "ctx≤120k"]);
+    expect(statuses.at(-1)).toEqual(["ceiling", "ctx 90k/120k"]);
+
+    // the gauge follows the live usage after every turn
+    handlers.get("turn_end")?.({}, { ...ctx, getContextUsage: () => ({ tokens: 131_000, contextWindow: model.contextWindow, percent: null }) });
+    expect(statuses.at(-1)).toEqual(["ceiling", "ctx 131k/120k"]);
 
     // a registry refresh may hand pi a fresh model object; re-clamp on turn_start
     const fresh = { provider: "claude-bridge", id: "claude-opus-5", contextWindow: 1_000_000 };
