@@ -221,6 +221,19 @@ class ConfigAndLanguage(unittest.TestCase):
                 "firstRun": True, "newDeployCommits": {}}
         self.assertTrue(mc.format_plan(plan).startswith("Кеш: 0 без змін · 0 на перескаут · пропущено 0 · перший прогін"))
 
+    def test_every_locale_has_the_same_keys(self):
+        for lang, strings in mc.STRINGS.items():
+            self.assertEqual(set(strings), set(mc.STRINGS["en"]), lang)
+            self.assertEqual([k for k, _ in strings["labels"]], [k for k, _ in mc.STRINGS["en"]["labels"]], lang)
+
+    def test_russian_messages_and_unknown_language_falls_back_to_english(self):
+        plan = {"tickets": {}, "rescout": [], "keep": [], "skipped": {}, "changes": {}, "rulesChanged": False,
+                "firstRun": True, "newDeployCommits": {}}
+        mc.configure(language="ru")
+        self.assertTrue(mc.format_plan(plan).startswith("Кеш: 0 без изменений · 0 на перескаут · пропущено 0 · первый прогон"))
+        mc.configure(language="de")
+        self.assertTrue(mc.format_plan(plan).startswith("Cache: 0 unchanged"))
+
     def test_config_file_overrides_defaults_and_warns_on_unknown_keys(self):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "c.json"

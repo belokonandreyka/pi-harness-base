@@ -12,10 +12,10 @@ say to enable only for an endpoint verified to accept the protocol.
 
 **This endpoint does not.** One fat tool schema, identical request otherwise:
 
-    без беты, defer            200   input_tokens = 3,190
-    з бетою, defer             200   input_tokens = 3,190
-    з бетою + tool_search      200   input_tokens = 3,190
-    контроль, без defer        200   input_tokens = 3,190
+    no beta header, defer      200   input_tokens = 3,190
+    beta header, defer         200   input_tokens = 3,190
+    beta header + tool_search  200   input_tokens = 3,190
+    control, no defer          200   input_tokens = 3,190
 
 Every variant is billed the same. `defer_loading: true`, the
 `advanced-tool-use-2025-11-20` beta header and the

@@ -8,8 +8,8 @@ The project AGENTS.md may say "PRs are optional for minor changes,
 mandatory for major core changes". So merging a ticket directly into
 `test` and pushing IS a valid workflow for small tickets — but the
 coordinator MUST NOT do it automatically as part of the verify/review
-turn. Do it ONLY when the user explicitly asks ("мерж у test", "пуш у test",
-"злий і пушни", or English equivalent).
+turn. Do it ONLY when the user explicitly asks ("merge into test", "push to
+test", "merge and push", or the equivalent in the user's language).
 
 **Default behavior after a green review:**
 

@@ -7,9 +7,10 @@ only the co-author line below was a real delta.
 
 ### Language
 
-- Answer in the language of the user's request. A Ukrainian question gets a
-  Ukrainian answer, an English question an English one. This holds for the whole
-  turn, including headings, findings and reference-code labels.
+- Answer in the language of the user's request: an English question gets an
+  English answer, a question in any other language an answer in that same
+  language — never a related one. This holds for the whole turn, including
+  headings, findings and reference-code labels.
 - Code, identifiers, file paths, commit messages, git branch names, Jira keys and
   quoted tool output stay in their original language regardless.
 - When forwarding a task to a subagent, the prompt stays in English; only the

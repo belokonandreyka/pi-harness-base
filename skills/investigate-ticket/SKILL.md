@@ -1,6 +1,6 @@
 ---
 name: investigate-ticket
-description: Investigate a Jira ticket end-to-end without changing any code — fetch ticket + comments from the configured Jira site, spawn a read-only scout subagent to locate the root cause in the local codebase, and return a structured findings report (suspected files, hypothesis, reproduction path, risks, open questions). Use when the user gives a ticket key like ABC-1234 and asks to "investigate", "look into", "find the cause", "розслідуй", "розберись з". Does NOT propose or apply a fix — that is a separate step handed to Opus/Fable.
+description: Investigate a Jira ticket end-to-end without changing any code — fetch ticket + comments from the configured Jira site, spawn a read-only scout subagent to locate the root cause in the local codebase, and return a structured findings report (suspected files, hypothesis, reproduction path, risks, open questions). Use when the user gives a ticket key like ABC-1234 and asks to "investigate", "look into", "find the cause" (in any language). Does NOT propose or apply a fix — that is a separate step handed to Opus/Fable.
 ---
 
 # Investigate ticket (read-only root-cause scout)
@@ -9,7 +9,7 @@ Read this skill fully before any tool call. It is authoritative for the flow.
 
 ## When to use
 
-- User gives a Jira key and asks to investigate / find the cause / розслідувати / розібратись, without asking for an immediate fix.
+- User gives a Jira key and asks to investigate / find the cause (in whatever language), without asking for an immediate fix.
 - User wants a scoped, evidence-backed report before deciding who plans the fix (Opus / Fable / a subagent).
 
 Do NOT use for:

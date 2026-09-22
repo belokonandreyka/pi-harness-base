@@ -54,7 +54,7 @@ DEFAULTS: dict = {
     "rulesPaths": {},               # {"<repo>": ["AGENTS.md", "docs"]}
     "contextFiles": [],             # what the scout reads first — used by the skill
     "maxAgeDays": 7,
-    "language": "en",               # "en" | "uk" — the script's own messages
+    "language": "en",               # report language; the script's own messages exist in "en", "ru" and "uk", anything else prints English
     "cache": "",                    # default: <agent-dir>/state/my-quick-wins/cache.json
 }
 CFG: dict = dict(DEFAULTS)
@@ -591,6 +591,24 @@ STRINGS = {
         "labels": [("new", "нові"), ("gone", "зникли з фільтра"), ("status", "статус"), ("sprint", "спринт"),
                    ("comments", "нові коментарі"), ("blockersClosed", "блокери закрито"),
                    ("linksResolved", "повʼязані закрито"), ("deploys", "деплої"), ("branches", "гілки")],
+    },
+    "ru": {
+        "summary": "Кеш: {keep} без изменений · {rescout} на перескаут · пропущено {skipped}",
+        "firstRun": " · первый прогон",
+        "rules": "⚠ файлы правил изменились — все вердикты перескаутить",
+        "blocked": "  ⛔ {k} — BLOCKED by {by} (не скаутим)",
+        "kept": "  = {k} — скаут {date}",
+        "changes": "Что изменилось с прошлого прогона:",
+        "service": "  сервис {repo}: {n} новых коммитов задеплоено на {envs}",
+        "branchNew": "{k}: origin/{k} в {repo} появилась",
+        "branchMoved": "{k}: origin/{k} в {repo} обновилась",
+        "stored": "Сохранены вердикты: {n} ({keys}); тикетов в кеше: {total}",
+        "unmatched": "; не из фильтра, проигнорировано: {keys}",
+        "handoff": "  ↪ Передать: {k} — ждёт {layer}, в Jira нет открытого блокера или связанной задачи на эту команду",
+        "handoffCheck": "  ? Проверить: {k} — ждёт {layer}; открытые: {links}; закрытые: {closed} — есть ли среди них задача этой команды и не сделала ли она уже свою часть?",
+        "labels": [("new", "новые"), ("gone", "ушли из фильтра"), ("status", "статус"), ("sprint", "спринт"),
+                   ("comments", "новые комментарии"), ("blockersClosed", "блокеры закрыты"),
+                   ("linksResolved", "связанные закрыты"), ("deploys", "деплои"), ("branches", "ветки")],
     },
 }
 

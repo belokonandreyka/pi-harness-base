@@ -30,7 +30,7 @@ the values below are referenced as `cfg.<key>`.
 | `rulesPaths` | per repo, the files whose change means every verdict is stale (`AGENTS.md`, docs) |
 | `contextFiles` | what the scout reads first |
 | `maxAgeDays` | verdict TTL |
-| `language` | `en` or `uk`; the report and the scout's prose follow it |
+| `language` | language of the report and the scout's prose, e.g. `en`, `ru`, `uk`; the cache script's own one-line messages ship in `en`, `ru` and `uk`, anything else prints them in English |
 | `cache` | where verdicts live; default `<agent-dir>/state/my-quick-wins/cache.json` |
 
 ## When to use
@@ -409,7 +409,8 @@ Tickets that left the filter are dropped from the cache here.
 
 ### 7. Consolidated report
 
-In `cfg.language`; the headings below are English, translate them for `uk`.
+In `cfg.language`, and only that language; the headings below are English,
+translate them when `cfg.language` is not `en`.
 Output in this order:
 
 #### 7a0. What changed since the last run
