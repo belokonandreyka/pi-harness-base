@@ -327,6 +327,18 @@ lives in the orchestrator `AGENTS.md`, next to the other rules. Config
 `pasted-content.json` (`minLines`, `minChars`, `ownLines`);
 `PI_PASTED_CONTENT=0` disables.
 
+## dropped-toolcall-guard
+
+Recovers a turn whose tool call the provider lost. Seen 2026-09-24 through an
+Anthropic-compatible gateway in front of Bedrock: thinking block, `stop_reason:
+tool_use`, 216 output tokens, and no `tool_use` block. pi's loop treats that as
+"Provider reported tool use without any tool calls" and ends the run; a pane
+subagent then sits at its prompt until the coordinator's inactivity timeout,
+which reports it as a crash. On `agent_end` with such a last message the guard
+sends one user message asking the model to repeat the call (a new turn), at
+most `maxRetries` (2) per session. Config `dropped-toolcall-guard.json`;
+`PI_DROPPED_TOOLCALL_GUARD=0` disables. Enabled in both profiles.
+
 ## copilot-usage
 
 A replacement footer. Replaces
@@ -387,10 +399,52 @@ Warming needs a cache lifetime for the model: add
 `"promptCache": { "short": 280, "long": 3300 }` to custom or gateway models in
 `models.json`; pi only ships lifetimes for direct Anthropic.
 
+Since 2026-09-24 it also records pi's own warm replays as seen through the
+provider hooks (`warm_attempt` when a request carries `max_tokens: 1`,
+`warm_result` with the HTTP status), the gateway-warmer's rows (`warm`,
+`warm_skip`, `warm_error`), and a `warm_missing` alarm: after a run ends, if
+the session is still idle 20 s before the cache lifetime runs out and no
+warmer has done anything, one line is logged and a warning shown. The
+report gains two lines, `gateway-warmer:` and `pi warmer:`.
+
+## gateway-warmer
+
+Keeps the prompt cache warm through an Anthropic-compatible gateway on its own
+timer, replacing pi's warmer where that one cannot be trusted. Found
+2026-09-24 on the Vitu gateway (Bifrost in front of Bedrock): pi's streaming
+`max_tokens: 1` replay is sometimes cut after `message_start`, so pi-ai throws,
+nothing is recorded (zero `cache_warm` entries in 51 sessions) and
+`/cache-stats` cannot see the spend — although the replay does refresh
+Bedrock's cache (write → +4 min warm → +4 min read hit, measured). Worse, pi's
+warmer stops silently when its timer runs more than 14 s late or when it
+judges the context changed; one such stop cost a 95k-token re-bill.
+
+The extension captures the exact payload and headers of every real request
+(`before_provider_request`, `before_provider_headers`) and, once the agent run
+ends, replays the last one non-streaming with `max_tokens: 1` every 0.9 ×
+`promptCache.short`, for as long as the cache-warm-policy rules allow (a
+subagent of this process is running, or the first `idleMinutes` after the
+last real request). Each replay is a `warm` row in the cache-telemetry log
+with the gateway's usage; a refresh that would land after the lifetime is
+skipped (`warm_skip`), gateway errors are logged (`warm_error`) and stop the
+cycle until the next real request. Never runs during an active run. Only
+adaptive thinking or thinking off is replayable: budget-based thinking
+(`thinking.budget_tokens`, e.g. Haiku 4.5 with any level) derives the budget
+from `max_tokens`, so a 1-token replay is rejected with 400 and would key a
+different message cache anyway — such payloads are skipped with a `warm_skip`
+row, same rule as pi's `CacheWarmer.isReplayable`. Needs
+`cacheWarming: "off"` so pi's warmer does not double the spend; reads
+`cache-warm-policy.json` for the rules and `gateway-warmer.json` `{ enabled }`;
+`PI_GATEWAY_WARMER=0` disables. Orchestrator profile only.
+
 ## cache-warm-policy
 
 Overrides pi's idle cache-warming verdict where its fixed 15% "another request
 will arrive in time" estimate is known to be wrong.
+
+> Superseded on gateways by `gateway-warmer` (above), which applies the same
+> rules with its own timer; keep this one only where pi's warmer works
+> end to end (direct Anthropic).
 
 **Why.** On an orchestrator that delegates to subagents, every lost cache of a
 measured day came from idle waits — the orchestrator ends its turn and sleeps

@@ -69,3 +69,31 @@ describe("cache-telemetry stats", () => {
     expect(formatStats([], 7)).toContain("no requests recorded");
   });
 });
+
+describe("cache-telemetry stats: gateway-warmer and pi-warmer rows", () => {
+  test("counts refreshes, misses, skips, errors, pi replays and missing-refresh alarms", () => {
+    const rows = [
+      { ts: "2026-09-24T10:00:00Z", profile: "pi", run: "gateway-warmer", kind: "warm", provider: "gw", model: "m", input: 2, output: 1, cacheRead: 80000, cacheWrite: 0, cost: 0.045, reason: "idle 4m <= 15m" },
+      { ts: "2026-09-24T10:04:00Z", profile: "pi", run: "gateway-warmer", kind: "warm", provider: "gw", model: "m", input: 2, output: 1, cacheRead: 0, cacheWrite: 80000, cost: 0.55, reason: "idle 8m <= 15m" },
+      { ts: "2026-09-24T10:08:00Z", profile: "pi", run: "gateway-warmer", kind: "warm_skip", provider: "gw", model: "m", reason: "idle past 15m" },
+      { ts: "2026-09-24T10:09:00Z", profile: "pi", run: "gateway-warmer", kind: "warm_error", provider: "gw", model: "m", status: 502 },
+      { ts: "2026-09-24T10:10:00Z", profile: "pi", run: "r", kind: "warm_attempt", provider: "gw", model: "m" },
+      { ts: "2026-09-24T10:10:01Z", profile: "pi", run: "r", kind: "warm_result", provider: "gw", model: "m", status: 200 },
+      { ts: "2026-09-24T10:14:00Z", profile: "pi", run: "r", kind: "warm_attempt", provider: "gw", model: "m" },
+      { ts: "2026-09-24T10:14:01Z", profile: "pi", run: "r", kind: "warm_result", provider: "gw", model: "m", status: 500 },
+      { ts: "2026-09-24T10:20:00Z", profile: "pi", run: "r", kind: "warm_missing", provider: "gw", model: "m", reason: "idle 4m" },
+    ].map((r) => JSON.stringify(r)).join("\n");
+    const [s] = summarize(parseEntries(rows));
+    expect(s.gwWarms).toBe(2);
+    expect(s.gwWarmMisses).toBe(1);
+    expect(s.gwWarmCost).toBeCloseTo(0.595, 6);
+    expect(s.gwSkips).toBe(1);
+    expect(s.gwErrors).toBe(1);
+    expect(s.piWarmAttempts).toBe(2);
+    expect(s.piWarmFailures).toBe(1);
+    expect(s.warmMissing).toBe(1);
+    const report = formatStats([s], 1);
+    expect(report).toContain("gateway-warmer: 2 refreshes for $0.595 (1 found the cache already gone), 1 skipped, 1 errors");
+    expect(report).toContain("pi warmer: 2 replays sent, 1 failed at the gateway · 1 idle stretches with no refresh at all");
+  });
+});

@@ -34,6 +34,13 @@ report after completing validation.
    verifying half-done work, at most twice, then respawn:
 
        agent_message({ action: "reply", runId, message: "Your task list still has open items: <them>. Continue with them. If one is blocked, say what is blocking it." })
+   A run reported `failed`, exit code 1, whose last session entry is an
+   assistant message with `stopReason: toolUse` and no tool call is not a crash:
+   the gateway dropped the `tool_use` block, pi ended the turn on "tool use
+   without any tool calls", and the child sat at its prompt until the
+   inactivity timeout. The `dropped-toolcall-guard` extension now re-asks for
+   the call; if it still shows up, respawn with the same prompt, nothing was lost.
+
 2. `git diff HEAD` in the subagent's working directory (main checkout or
    worktree) to see the actual changes.
 3. **Commit through the hooks — that is the DoD check.** In the repo's

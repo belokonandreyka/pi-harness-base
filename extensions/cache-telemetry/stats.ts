@@ -44,7 +44,37 @@ export interface OverrideEntry {
   missCost: number;
 }
 
-export type CacheEntry = RequestEntry | WarmEntry | OverrideEntry;
+/** A refresh made by the gateway-warmer extension, with the usage the gateway reported. */
+export interface GatewayWarmEntry {
+  ts: string;
+  profile: string;
+  run: string;
+  kind: "warm";
+  provider: string;
+  model: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+  reason: string;
+}
+
+/** gateway-warmer bookkeeping and pi's own warmer as seen through the provider hooks. */
+export interface WarmNoteEntry {
+  ts: string;
+  profile: string;
+  run: string;
+  kind: "warm_skip" | "warm_error" | "warm_attempt" | "warm_result" | "warm_missing";
+  provider: string;
+  model: string;
+  reason?: string;
+  status?: number;
+}
+
+export type CacheEntry = RequestEntry | WarmEntry | OverrideEntry | GatewayWarmEntry | WarmNoteEntry;
+
+const KINDS = new Set(["request", "warm_decision", "warm_override", "warm", "warm_skip", "warm_error", "warm_attempt", "warm_result", "warm_missing"]);
 
 /** A gap this long means the default 5-minute provider cache would have expired without a refresh. */
 export const EXPIRY_GAP_SEC = 270;
@@ -73,7 +103,7 @@ export function parseEntries(contents: string): CacheEntry[] {
     if (!line.trim()) continue;
     try {
       const e = JSON.parse(line);
-      if (e && (e.kind === "request" || e.kind === "warm_decision" || e.kind === "warm_override")) out.push(e);
+      if (e && KINDS.has(e.kind)) out.push(e);
     } catch {
       // a torn line from a crashed session is not worth failing the report
     }
@@ -101,11 +131,23 @@ export interface ModelStats {
   policyWarms: number;
   warmCost: number;
   avoidedMissCost: number;
+  /** gateway-warmer: refreshes actually sent, what they cost, how many found the cache already gone. */
+  gwWarms: number;
+  gwWarmCost: number;
+  gwWarmMisses: number;
+  gwSkips: number;
+  gwErrors: number;
+  /** pi's own warmer, seen through the provider hooks: replays sent and replays that failed. */
+  piWarmAttempts: number;
+  piWarmFailures: number;
+  /** idle stretches in which no warmer did anything before the cache lifetime ran out */
+  warmMissing: number;
 }
 
 function blank(key: string): ModelStats {
   return { key, requests: 0, promptTokens: 0, cacheRead: 0, cacheWrite: 0, cost: 0, longGapHits: 0, longGapMisses: 0,
-    longGapMissTokens: 0, shortGapMisses: 0, warmCount: 0, stopCount: 0, policyWarms: 0, warmCost: 0, avoidedMissCost: 0 };
+    longGapMissTokens: 0, shortGapMisses: 0, warmCount: 0, stopCount: 0, policyWarms: 0, warmCost: 0, avoidedMissCost: 0,
+    gwWarms: 0, gwWarmCost: 0, gwWarmMisses: 0, gwSkips: 0, gwErrors: 0, piWarmAttempts: 0, piWarmFailures: 0, warmMissing: 0 };
 }
 
 export function summarize(entries: CacheEntry[], sinceMs = 0): ModelStats[] {
@@ -135,6 +177,17 @@ export function summarize(entries: CacheEntry[], sinceMs = 0): ModelStats[] {
       }
       continue;
     }
+    if (e.kind === "warm") {
+      s.gwWarms++;
+      s.gwWarmCost += e.cost || 0;
+      if (!e.cacheRead) s.gwWarmMisses++;
+      continue;
+    }
+    if (e.kind === "warm_skip") { s.gwSkips++; continue; }
+    if (e.kind === "warm_error") { s.gwErrors++; continue; }
+    if (e.kind === "warm_attempt") { s.piWarmAttempts++; continue; }
+    if (e.kind === "warm_result") { if ((e.status ?? 0) >= 400) s.piWarmFailures++; continue; }
+    if (e.kind === "warm_missing") { s.warmMissing++; continue; }
     if (e.kind === "warm_decision") {
       if (e.action === "warm") {
         s.warmCount++;
@@ -176,6 +229,12 @@ export function formatStats(stats: ModelStats[], days: number): string {
     if (s.warmCount || s.stopCount) {
       lines.push(`  warming: ${s.warmCount} refreshes for ${usd(s.warmCost)} (pi estimated ${usd(s.avoidedMissCost)} at risk), ${s.stopCount} times judged not worth it${s.policyWarms ? `, ${s.policyWarms} of the refreshes forced by policy` : ""}`);
     } else lines.push("  warming: no decisions recorded");
+    if (s.gwWarms || s.gwSkips || s.gwErrors) {
+      lines.push(`  gateway-warmer: ${s.gwWarms} refreshes for ${usd(s.gwWarmCost)}${s.gwWarmMisses ? ` (${s.gwWarmMisses} found the cache already gone)` : ""}, ${s.gwSkips} skipped, ${s.gwErrors} errors`);
+    }
+    if (s.piWarmAttempts || s.warmMissing) {
+      lines.push(`  pi warmer: ${s.piWarmAttempts} replays sent, ${s.piWarmFailures} failed at the gateway · ${s.warmMissing} idle stretches with no refresh at all`);
+    }
     lines.push("");
   }
   return lines.join("\n").trimEnd();

@@ -13,6 +13,9 @@
     "/Users/<you>/projects/pi-harness-base/extensions/poll-guard/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/gateway-budget/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/copilot-usage/index.ts",
- "/Users/<you>/projects/pi-harness-base/extensions/pasted-content/index.ts"
-  ]
+    "/Users/<you>/projects/pi-harness-base/extensions/pasted-content/index.ts",
+    "/Users/<you>/projects/pi-harness-base/extensions/dropped-toolcall-guard/index.ts",
+    "/Users/<you>/projects/pi-harness-base/extensions/gateway-warmer/index.ts"
+  ],
+  "cacheWarming": "off"
 }
