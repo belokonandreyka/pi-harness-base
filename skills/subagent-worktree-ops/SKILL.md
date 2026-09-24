@@ -28,7 +28,12 @@ report after completing validation.
 1. Read the Run ID(s) from the wake token, then call
    `agent_message({ action: "session", runId })` to confirm status `completed`
    and read the output preview. Use `agent_message({ action: "tail", runId })`
-   when transcript detail is needed.
+   when transcript detail is needed. **A report that announces a next step
+   instead of taking it is an early stop, not a completion** (Opus 5.5 ends
+   turns this way): its session and pane are still alive, so reply instead of
+   verifying half-done work, at most twice, then respawn:
+
+       agent_message({ action: "reply", runId, message: "Your task list still has open items: <them>. Continue with them. If one is blocked, say what is blocking it." })
 2. `git diff HEAD` in the subagent's working directory (main checkout or
    worktree) to see the actual changes.
 3. **Commit through the hooks — that is the DoD check.** In the repo's

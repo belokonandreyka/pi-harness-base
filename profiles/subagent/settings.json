@@ -10,6 +10,7 @@
     "/Users/<you>/projects/pi-harness-base/extensions/tool-result-offload/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/copilot-credits/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/copilot-usage/index.ts",
-    "/Users/<you>/projects/pi-harness-base/extensions/gateway-budget/index.ts"
+    "/Users/<you>/projects/pi-harness-base/extensions/gateway-budget/index.ts",
+    "/Users/<you>/projects/pi-harness-base/extensions/elapsed-clock/index.ts"
   ]
 }

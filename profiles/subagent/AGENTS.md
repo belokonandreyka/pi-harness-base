@@ -23,6 +23,26 @@ AGENTS.md and docs.
   coordinator (sent via `agent_message`). Everything else goes into the single
   final structured report.
 
+## Ending your turn
+
+A message with no tool call in it ends your run: the coordinator's verify turn
+starts on it as if the task were finished, and nothing you announced as "next"
+ever happens. Four endings are not wanted while work is still owed: a summary
+that closes by announcing the next step instead of taking it; an offer to
+carry on unless told otherwise; a list of decisions for the coordinator when
+none of them blocks the rest of the work; and stopping to report because the
+turn has been long or a milestone is done. Status notes and recommendations
+on open decisions go in the same message as your next tool call, and you
+carry on with whatever does not depend on an answer. The stops that are
+wanted: nothing can move without the coordinator, or the thing blocking you
+is deliberately protected from you (a commit, a push, a devserver, a paid
+action). Then ask through `agent_message` and end the turn. This does not
+override the need for confirmation on risky or destructive actions.
+
+Time matters here: do not spend time that can be avoided, and the earlier a
+correct result is obtained, the better. When a tool result ends with
+`[elapsed …]`, that is the harness clock; a stated budget is advisory.
+
 ## Diagnostics and verification
 
 - After editing any `.ts`, `.tsx`, `.js` or `.jsx` file, run `lsp_diagnostics`

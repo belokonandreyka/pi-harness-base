@@ -296,6 +296,37 @@ one. `send`, `reply`, `broadcast` and short retry pauses are never touched.
 Config `poll-guard.json`; `PI_POLL_GUARD=off` disables it for a session.
 Enabled in the orchestrator profile.
 
+## elapsed-clock
+
+Appends `[elapsed 340s / 1200s]` (or `[elapsed 340s]` when no budget is known)
+to the end of every tool result. Claude Opus 5.5 paces itself by elapsed-time
+information from the harness and finishes inside a budget, usually well before
+it; small agent teams given a budget finished sooner at comparable quality
+(Anthropic, "Prompting Claude Opus 5.5", time signals for multiagent
+harnesses). Older models ignore the line. In pi the message the harness sends
+back to the model is the tool result, hence the placement. The budget comes
+from env `PI_TIME_BUDGET_S` or from the task prompt (`time budget: 20m`); the
+clock starts at session start. The budget is advisory, nothing stops the run
+at the limit. Config `elapsed-clock.json` (`everyNth`, `tools`);
+`PI_ELAPSED_CLOCK=0` disables. Meant for the subagent profile; the
+coordinator's turns are driven by a person, not a clock.
+
+## pasted-content
+
+Wraps text the user pasted into a prompt in `<pasted_content id="ab12">` …
+`</pasted_content id="ab12">` tags (random id, both tags on their own line),
+which is what Claude Opus 5.5 needs to treat instructions inside an email, a
+ticket or a PR comment as data rather than as the user's request (Anthropic,
+"Prompting Claude Opus 5.5", mark pasted text in user messages). pi's editor
+expands a paste verbatim on submit, so the extension reuses pi's own paste
+threshold (over 10 lines or 1000 characters) and the shape of a typed prompt:
+short lines before the first blank line and after the last one are the user's
+words, the bulk between them is the paste. Only interactive input is touched;
+subagent task prompts arrive as rpc input. The matching system-prompt sentence
+lives in the orchestrator `AGENTS.md`, next to the other rules. Config
+`pasted-content.json` (`minLines`, `minChars`, `ownLines`);
+`PI_PASTED_CONTENT=0` disables.
+
 ## copilot-usage
 
 A replacement footer. Replaces
