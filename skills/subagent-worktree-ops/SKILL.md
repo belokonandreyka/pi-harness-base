@@ -33,7 +33,7 @@ report after completing validation.
    turns this way): its session and pane are still alive, so reply instead of
    verifying half-done work, at most twice, then respawn:
 
-       agent_message({ action: "reply", runId, message: "Your task list still has open items: <them>. Continue with them. If one is blocked, say what is blocking it." })
+       agent_message({ action: "reply", runId, message: "Your task list still has open items: <them>. Continue with them, and stay on the task as assigned: if you are adding something it did not ask for, stop and report that instead. If one is blocked, say what is blocking it." })
    A run reported `failed`, exit code 1, whose last session entry is an
    assistant message with `stopReason: toolUse` and no tool call is not a crash:
    the gateway dropped the `tool_use` block, pi ended the turn on "tool use
@@ -63,6 +63,16 @@ report after completing validation.
 5. Present the review verdict to the developer with the landed commit (key +
    Jira summary as written by the hook), the follow-up-commit plan for any
    findings, and the next-step decision prompt.
+
+   **Review ledger.** Before presenting the verdict, append one line per
+   finding to `<agent-dir>/state/review-ledger.md`
+   (`- <date> <KEY> · <category> · <path or area> · <finding in a clause>`)
+   and grep the ledger for the same category in the same area on an earlier
+   ticket. A repeat means the convention is missing from the reviewer's
+   knowledge, not that the worker was careless: add to the verdict one
+   proposed line for the review skill (the project's conventions skill when
+   there is one), quoted verbatim, and change the skill only after the
+   developer approves it. Never write the skill from a single finding.
 
 Do verify + review in that same turn. Do not wait for or re-quote a
 developer-facing auto-post; inspect the durable run record immediately.

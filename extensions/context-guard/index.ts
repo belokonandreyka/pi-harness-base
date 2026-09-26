@@ -151,10 +151,11 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   pi.registerTool({
     name: NOTE_TOOL,
     label: "Handoff note",
-    description: `Save a note to yourself that survives the next automatic context compaction: it is appended verbatim to the compaction summary. Write what a summary written by someone else would lose: DONE with exact paths, commands and verified results; IN PROGRESS; key decisions; and the exact NEXT ACTION as the last line (max ${cfg.maxNoteChars} chars). Calling it again replaces the note. Use it when a [context-guard] message asks for it or at a clean checkpoint when the context is high.`,
+    description: `Save a note to yourself that survives the next automatic context compaction: it is appended verbatim to the compaction summary. Write what a summary written by someone else would lose: GOAL (the original task in one line, as asked, not as it has grown) first; DONE with exact paths, commands and verified results; IN PROGRESS; key decisions; and the exact NEXT ACTION as the last line (max ${cfg.maxNoteChars} chars). Calling it again replaces the note. Use it when a [context-guard] message asks for it or at a clean checkpoint when the context is high.`,
     promptSnippet: "Save a handoff note that is appended verbatim to the next compaction summary",
     promptGuidelines: [
       `After a compaction, read the "Handoff note" at the end of the summary first and continue from its NEXT ACTION; never redo work it marks as done.`,
+      `Refocus after every compaction: before acting, check that NEXT ACTION still lies on the path to the Goal line. Each step can look justified on its own while the work as a whole drifts (a light for the doghouse needs a generator, the generator needs fuel …); if the current work adds something the task did not ask for, stop and say so instead of continuing.`,
     ],
     parameters: {
       type: "object",

@@ -32,11 +32,11 @@ order and where the overlay plugs in.
 | Path | What it is |
 |---|---|
 | `extensions/` | the extensions, each with tests, documented in [extensions/README.md](extensions/README.md) |
-| `skills/` | `herdr-terminals`, `investigate-ticket`, `my-quick-wins` ("plan my day", with its day-to-day cache script), `ralplan`, `subagent-worktree-ops` |
+| `skills/` | `herdr-terminals`, `investigate-ticket`, `my-quick-wins` ("plan my day", with its day-to-day cache script), `ralplan`, `subagent-worktree-ops`, `video-digest` (screen recording → keyframes → text timeline, with a time window and a two-pass for long recordings) |
 | `subagents/` | subagent type definitions (`*.toml`): model, reasoning, tools, prompt |
 | `profiles/orchestrator/` | templates for `~/.pi/agent`: settings, `AGENTS.md`, `durable-context.md`, `models.json.template`, extension configs |
 | `profiles/subagent/` | templates for `~/.pi-sub/agent` |
-| `measure/` | probes for what each request actually costs |
+| `measure/` | probes for what each request actually costs; `ceremony.py` reads the collab run records and prints review/verify time against implementation time per ticket, so a new rule or gate is added only when the number says the process is the problem |
 | `notes/` | measurements worth keeping (deferred tool loading through a gateway, dependency drift) |
 | `scripts/install.sh` | renders the templates into both profiles without overwriting, symlinks the skills, installs the packages; `--copilot` for a gateway-less setup |
 | `scripts/patch-terminal-font.py` | JetBrains Mono with the Herdr agent-icon glyphs, for terminals without font fallback (Terminal.app) |

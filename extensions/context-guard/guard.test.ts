@@ -70,6 +70,7 @@ describe("context-guard gauge", () => {
     const dir = tempAgentDir();
     const plain = summaryInstructions(dir, DEFAULT_CONFIG, false);
     expect(plain).toContain("12,000 characters");
+    expect(plain).toContain("Goal:");
     expect(plain).not.toContain("handoff note");
     const withNote = summaryInstructions(dir, DEFAULT_CONFIG, true, "focus on the API layer");
     expect(withNote).toContain("do not restate");

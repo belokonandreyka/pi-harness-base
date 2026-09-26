@@ -114,7 +114,8 @@ export const DEFAULT_SUMMARY_INSTRUCTIONS = `Rules for this checkpoint summary:
 - Mark work as Done only when a tool result in the conversation confirms it; call a result verified only when a test, command or check actually showed it. Pending actions stay pending, never described as finished.
 - Keep exact file paths, commands, error messages and numbers; they are what the next steps depend on.
 - When a previous summary is provided, merge it: move finished items to Done, drop what is no longer relevant, and keep the whole summary under about {{maxSummaryChars}} characters.
-- Keep the original task wording and constraints from the first user message where they matter.`;
+- Keep the original task wording and constraints from the first user message where they matter.
+- Open with a "Goal:" line: the original task in one sentence, as the first user message stated it (ticket key and acceptance criteria when there are any). Every later step is measured against this line, so it must not drift toward what the work has grown into.`;
 
 export function summaryInstructions(agentDir: string, cfg: GuardConfig, noteSaved: boolean, custom?: string): string {
   let text = DEFAULT_SUMMARY_INSTRUCTIONS;

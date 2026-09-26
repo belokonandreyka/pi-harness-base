@@ -208,7 +208,13 @@ refreshed after every turn. Tests: `bun test extensions/context-ceiling`.
 ## context-guard
 
 Lets the model see its own context gauge, warns it before pi's automatic
-compaction, and carries its own handoff note across the cut. The idea comes from
+compaction, and carries its own handoff note across the cut. Since 2026-09-26
+the summary opens with a `Goal:` line (the task as originally asked) and the
+note starts with GOAL, and the guidelines tell the model to refocus after
+each compaction: check that the next action still lies on the path to that
+goal, and stop when the work has grown past what was asked. A long session
+drifts one locally sensible step at a time, and a summary of the drifted
+state makes the drift the new baseline. The idea comes from
 [disler/self-compact-pi-agent](https://github.com/disler/self-compact-pi-agent);
 what is deliberately left out is its tool lock and its cancelling of pi's own
 compaction, so the ceiling above still guarantees a compaction even when the
