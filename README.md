@@ -36,6 +36,7 @@ order and where the overlay plugs in.
 | `subagents/` | subagent type definitions (`*.toml`): model, reasoning, tools, prompt |
 | `profiles/orchestrator/` | templates for `~/.pi/agent`: settings, `AGENTS.md`, `durable-context.md`, `models.json.template`, extension configs |
 | `profiles/subagent/` | templates for `~/.pi-sub/agent` |
+| `eval/` | regression set for the harness itself: tasks from past delegations, `run.py` matrix in git worktrees through `pi -p`, judge from another model family, report (see `eval/README.md`) |
 | `measure/` | probes for what each request actually costs; `ceremony.py` reads the collab run records and prints review/verify time against implementation time per ticket, so a new rule or gate is added only when the number says the process is the problem |
 | `notes/` | measurements worth keeping (deferred tool loading through a gateway, dependency drift) |
 | `scripts/install.sh` | renders the templates into both profiles without overwriting, symlinks the skills, installs the packages; `--copilot` for a gateway-less setup |

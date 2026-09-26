@@ -1,0 +1,13 @@
+{
+  "name": "worker",
+  "agentDir": "~/.pi-sub/agent",
+  "systemPromptToml": "~/.pi/agents/worker.toml",
+  "model": "github-copilot/claude-opus-5.5",
+  "thinking": "medium",
+  "tools": "read,bash,edit,write,lsp_diagnostics,lsp_fix,rg,fd",
+  "appendSystemPrompt": [
+    "This is an evaluation run with no collaboration bus: the agent_message tool is not available, skip every step that uses it (status, list, reserve, release, send). Do the task, run the checks the repository guides ask for, and end with the structured final report as plain text."
+  ],
+  "extraArgs": [],
+  "env": {}
+}

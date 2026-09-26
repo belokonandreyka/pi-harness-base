@@ -1,0 +1,18 @@
+{
+  "id": "APP-123-abcd1234",
+  "status": "draft",
+  "repo": "/path/to/repo",
+  "workdir": "web",
+  "base": "<sha the agent starts from>",
+  "reference": "<sha that shipped the ticket>",
+  "referenceSubject": "APP-123 Add the thing",
+  "prompt": "Implement APP-123 ... (the coordinator's full task text)",
+  "expectFiles": ["web/src/app/thing/thing.component.ts"],
+  "checks": [
+    {"cmd": "npx eslint $(git diff --cached --name-only --relative -- . | grep -E '^src/.*\\.(ts|html)$' | tr '\\n' ' ')", "timeoutMin": 5},
+    {"cmd": "npm run test-ci -- --include='**/thing/**/*.spec.ts'", "timeoutMin": 15}
+  ],
+  "link": ["web/node_modules"],
+  "timeoutMin": 20,
+  "notes": "what the base commit must contain, why this reference"
+}
