@@ -37,7 +37,7 @@ order and where the overlay plugs in.
 | `profiles/orchestrator/` | templates for `~/.pi/agent`: settings, `AGENTS.md`, `durable-context.md`, `models.json.template`, extension configs |
 | `profiles/subagent/` | templates for `~/.pi-sub/agent` |
 | `eval/` | regression set for the harness itself: tasks from past delegations, `run.py` matrix in git worktrees through `pi -p`, judge from another model family, report (see `eval/README.md`) |
-| `measure/` | probes for what each request actually costs; `ceremony.py` reads the collab run records and prints review/verify time against implementation time per ticket, so a new rule or gate is added only when the number says the process is the problem |
+| `measure/` | probes for what each request actually costs; `ceremony.py` reads the collab run records and prints review/verify time against implementation time per ticket, so a new rule or gate is added only when the number says the process is the problem; `compaction.py` prices every compaction (summary call + cache re-write) against the smaller reads that follow and prints the context size from which compacting pays off, so the ceiling is set from a number; `capture-proxy.py` logs the exact request an agent sends to a provider, for the failures curl cannot reproduce |
 | `notes/` | measurements worth keeping (deferred tool loading through a gateway, dependency drift) |
 | `scripts/install.sh` | renders the templates into both profiles without overwriting, symlinks the skills, installs the packages; `--copilot` for a gateway-less setup |
 | `scripts/patch-terminal-font.py` | JetBrains Mono with the Herdr agent-icon glyphs, for terminals without font fallback (Terminal.app) |
