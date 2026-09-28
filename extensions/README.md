@@ -294,11 +294,16 @@ Config `copilot-credits.json` → `{ "creditsPerDollar": 100 }`; env
 
 Deterministic replacement for the "do not poll a running subagent" rule the
 coordinator kept ignoring (`sleep 120; echo waited` + `agent_message tail
-mode:status` in a loop). Blocks `bash` commands containing `sleep N` with N ≥
-`minSleepSeconds` (default 20) and blocks a repeat `tail`/`session`/`sessions`
-on the same run id inside `pollIntervalSeconds` (default 90); the block reason
-tells the model to end its turn and let the completion wake start the next
-one. `send`, `reply`, `broadcast` and short retry pauses are never touched.
+mode:status` in a loop). Blocks `bash` commands whose sleeps add up to
+`minSleepSeconds` (default 20) or more — the sum, because `sleep 19; sleep 19;
+sleep 15` was the answer to a per-sleep limit — and blocks a repeat
+`tail`/`session`/`sessions` on the same run id inside `pollIntervalSeconds`
+(default 90); the block reason tells the model to end its turn and let the
+completion wake start the next one. A run whose record under
+`collaborating-agents/runs/` is completed, failed or parked on a question is
+read, not polled: that check passes and clears the timer, so the read right
+after the completion wake is never blocked. `send`, `reply`, `broadcast` and
+short retry pauses are never touched.
 Config `poll-guard.json`; `PI_POLL_GUARD=off` disables it for a session.
 Enabled in the orchestrator profile.
 

@@ -7,11 +7,16 @@
  * `agent_message tail mode:status` in a loop (seen 2026-09-10). Prompts do not
  * hold; a blocked tool call does. Two deterministic gates:
  *
- * 1. `bash` commands whose purpose is to wait — a `sleep N` with N at or above
- *    `minSleepSeconds` (default 20) anywhere in the command — are blocked.
+ * 1. `bash` commands whose purpose is to wait — sleeps adding up to
+ *    `minSleepSeconds` (default 20) or more in one command — are blocked. The
+ *    sum, not the longest: `sleep 19; sleep 19; sleep 15` was the coordinator's
+ *    answer to a per-sleep limit (seen 2026-09-28).
  * 2. Status polls (`agent_message` with action `tail`/`session`/`sessions`
  *    while a run is active) are allowed once, then blocked for
- *    `pollIntervalSeconds` (default 90) per run id.
+ *    `pollIntervalSeconds` (default 90) per run id. A run whose record says it
+ *    is no longer running, or is parked on a question, is not polled but read:
+ *    the check is allowed and the timer cleared. Without this the first read
+ *    after the completion wake was blocked as a poll (seen 2026-09-28).
  *
  * Config: `<agentDir>/poll-guard.json` → { "minSleepSeconds": 20, "pollIntervalSeconds": 90 }
  * Env:    PI_POLL_GUARD=0/off disables the guard for a session.
@@ -48,16 +53,41 @@ export function loadConfig(agentDir?: string): PollGuardConfig {
   }
 }
 
-/** Largest `sleep N` (seconds) found in a shell command, or 0 when there is none. */
-export function longestSleepSeconds(command: string): number {
-  let longest = 0;
+function sleepSecondsIn(command: string): number[] {
+  const out: number[] = [];
   for (const m of command.matchAll(/(?:^|[;&|(\s])sleep\s+(\d+(?:\.\d+)?)([smh]?)\b/g)) {
     const n = Number(m[1]);
     const unit = m[2];
-    const seconds = unit === "m" ? n * 60 : unit === "h" ? n * 3600 : n;
-    if (seconds > longest) longest = seconds;
+    out.push(unit === "m" ? n * 60 : unit === "h" ? n * 3600 : n);
   }
-  return longest;
+  return out;
+}
+
+/** Largest `sleep N` (seconds) found in a shell command, or 0 when there is none. */
+export function longestSleepSeconds(command: string): number {
+  return Math.max(0, ...sleepSecondsIn(command));
+}
+
+/** All `sleep N` in a shell command added up — chained short sleeps are one wait. */
+export function totalSleepSeconds(command: string): number {
+  return sleepSecondsIn(command).reduce((a, b) => a + b, 0);
+}
+
+/**
+ * True when the collab run record for `runId` says the child is not running any
+ * more (completed / failed) or is parked on a question: reading it then is not
+ * polling. Unknown ids and unreadable records count as running.
+ */
+export function runIsSettled(runId: string, agentDir?: string): boolean {
+  const dir = agentDir ?? process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+  const file = join(dir, "collaborating-agents", "runs", `${runId}.json`);
+  if (!/^[A-Za-z0-9_-]+$/.test(runId) || !existsSync(file)) return false;
+  try {
+    const record = JSON.parse(readFileSync(file, "utf-8")) as { status?: string; awaitingReply?: string | null };
+    return (record.status !== undefined && record.status !== "running" && record.status !== "launching") || Boolean(record.awaitingReply);
+  } catch {
+    return false;
+  }
 }
 
 export function isDisabled(): boolean {
@@ -80,12 +110,12 @@ export default function pollGuardExtension(pi: ExtensionAPI): void {
 
     if (event.toolName === "bash") {
       const command = typeof event.input?.command === "string" ? event.input.command : "";
-      const seconds = longestSleepSeconds(command);
+      const seconds = totalSleepSeconds(command);
       if (seconds >= config.minSleepSeconds) {
         return {
           block: true,
           reason:
-            `poll-guard: \`sleep ${seconds}\` blocked. Waiting for a subagent is not done with sleep or polling — ` +
+            `poll-guard: ${seconds} s of sleep in one command blocked. Waiting for a subagent is not done with sleep or polling — ` +
             `end your turn; the completion wake starts a new turn on its own. If you need to wait for a process you ` +
             `started (devserver, build), wait on its output or port, not on time.`,
         };
@@ -98,6 +128,10 @@ export default function pollGuardExtension(pi: ExtensionAPI): void {
       const key = String(input.runId ?? input.to ?? input.action);
       const previous = lastPoll.get(key);
       const t = now();
+      if (previous !== undefined && typeof input.runId === "string" && runIsSettled(input.runId)) {
+        lastPoll.delete(key);
+        return;
+      }
       if (previous !== undefined && t - previous < config.pollIntervalSeconds * 1000) {
         const ago = Math.round((t - previous) / 1000);
         return {
