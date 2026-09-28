@@ -97,14 +97,28 @@ def sh(args, cwd=None, timeout=None, env=None):
 
 
 def make_worktree(task, name):
+    """A detached checkout of the base commit that sees no other refs.
+
+    A `git worktree` shares the repository's branches, remotes and tags, so
+    `git log --all` or a local ticket branch would show the agent the shipped
+    fix. A shared clone borrows the object store (no copy) but has its own
+    refs: the remote and every branch are dropped, leaving only HEAD.
+    """
     repo = expand(task["repo"])
     wt = f"{repo}-eval-{name}"
     if os.path.exists(wt):
         sh(["git", "-C", repo, "worktree", "remove", "--force", wt])
         shutil.rmtree(wt, ignore_errors=True)
-    code, out = sh(["git", "-C", repo, "worktree", "add", "--detach", wt, task["base"]])
+    code, out = sh(["git", "clone", "-q", "--shared", "--no-checkout", "--no-tags", repo, wt])
     if code != 0:
-        raise RuntimeError(f"worktree add failed: {out.strip()}")
+        raise RuntimeError(f"clone failed: {out.strip()}")
+    for args in (["checkout", "-q", "--detach", task["base"]], ["remote", "remove", "origin"]):
+        code, out = sh(["git", "-C", wt, *args])
+        if code != 0:
+            raise RuntimeError(f"git {args[0]} failed: {out.strip()}")
+    _, heads = sh(["git", "-C", wt, "for-each-ref", "--format=%(refname)", "refs/heads"])
+    for ref in heads.split():
+        sh(["git", "-C", wt, "update-ref", "-d", ref])
     for rel in task.get("link") or []:
         src, dst = os.path.join(repo, rel), os.path.join(wt, rel)
         if os.path.exists(src) and not os.path.exists(dst):
@@ -122,8 +136,8 @@ def make_worktree(task, name):
 
 
 def remove_worktree(task, wt):
-    sh(["git", "-C", expand(task["repo"]), "worktree", "remove", "--force", wt])
     shutil.rmtree(wt, ignore_errors=True)
+    sh(["git", "-C", expand(task["repo"]), "worktree", "prune"])
 
 
 def pi_command(cfg, prompt, session_dir):
@@ -296,6 +310,8 @@ def one_run(task, cfg, n, out_root, keep):
             "changedFiles": files, "expectedFiles": expected, "expectedCoverage": round(len(touched_expected) / len(expected), 2) if expected else None,
             "checks": checks, "checksPassed": all(c["ok"] for c in checks) if checks else None,
             "gitPeeks": cheat_flags(bash_commands, key, wt),
+            # the checkout is a shared clone with no refs beyond HEAD: a peek can only find history the base already had
+            "isolation": "clone",
         })
     except Exception as e:  # noqa: BLE001 — one broken run must not stop the matrix
         result.update({"status": "harness-error", "error": str(e)})

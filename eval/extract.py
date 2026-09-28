@@ -85,13 +85,13 @@ def main():
     ap.add_argument("--repo", required=True, help="repository the runs worked in (cwd prefix match)")
     ap.add_argument("--out", required=True, help="directory for task JSON files")
     ap.add_argument("--since", type=int, default=60, help="days back (default 60)")
-    ap.add_argument("--checks", default=None, help="JSON file with the check template: {\"checks\": [...], \"timeoutMin\": N, \"link\": [...]} ")
+    ap.add_argument("--checks", default=None, help="JSON file with the check template: {\"checks\": [...], \"timeoutMin\": N, \"link\": [...], \"testCmd\": \"... {includes}\"} ")
     ap.add_argument("--types", default="worker", help="comma-separated subagent types to consider")
     ap.add_argument("--overwrite", action="store_true")
     a = ap.parse_args()
 
     repo = os.path.realpath(os.path.expanduser(a.repo))
-    template = {"checks": [], "timeoutMin": 20, "link": []}
+    template = {"checks": [], "timeoutMin": 20, "link": [], "testCmd": None}
     if a.checks:
         with open(a.checks) as fh:
             template.update(json.load(fh))
@@ -152,6 +152,8 @@ def main():
             "checks": template["checks"],
             "link": template["link"],
             "timeoutMin": template["timeoutMin"],
+            "testCmd": template.get("testCmd"),
+            "hiddenTests": [f for f in files if f.endswith((".spec.ts", ".test.ts", "_test.py", "Tests.cs"))],
             "source": {"recordId": rec["recordId"], "startedAt": rec.get("startedAt"), "model": rec.get("model"), "sessionFile": session_file},
             "notes": "DRAFT — check that the base commit carries everything the prompt assumes, that the reference commit is the right round, and that the checks fit; then set status to ready.",
         }
