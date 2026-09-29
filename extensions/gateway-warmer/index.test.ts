@@ -121,4 +121,17 @@ describe("gateway-warmer", () => {
     delete process.env.PI_GATEWAY_WARMER;
     expect(handlers.size).toBe(0);
   });
+
+  test("a compaction drops the captured payload: nothing to warm until the next real request", async () => {
+    const h = harness();
+    h.realTurn();
+    expect(h.timers.length).toBe(1);
+    h.handlers.get("session_compact")?.({}, h.ctx);
+    expect(h.timers.length).toBe(0); // the pending warm is cancelled
+    await h.fire();
+    expect(h.calls.length).toBe(0); // and nothing replays the old prefix
+    h.realTurn(); // the next real request re-arms it
+    await h.fire();
+    expect(h.calls.length).toBe(1);
+  });
 });

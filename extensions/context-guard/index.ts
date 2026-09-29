@@ -201,7 +201,7 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
       const { gauge: g } = await gauge(ctx);
       const left = g.tokens === null ? "unknown" : `${k(Math.max(0, g.limit - g.tokens))} tokens`;
       return {
-        content: [{ type: "text", text: `Handoff note saved (${note.length} chars). It is appended verbatim to the next compaction summary; ${left} left before compaction. Keep working.` }],
+        content: [{ type: "text", text: `Handoff note saved (${note.length} chars). It is appended verbatim to the next compaction summary; ${left} left before compaction. Do not end your turn for the compaction, it runs inside your turn. Keep working.` }],
         details: { noteChars: note.length, tokensLeft: g.tokens === null ? null : Math.max(0, g.limit - g.tokens) },
       };
     },

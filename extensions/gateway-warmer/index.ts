@@ -264,5 +264,14 @@ export default function gatewayWarmerExtension(pi: any, deps: Deps = {}): void {
     if (lastRefreshAt !== null) schedule(lastRefreshAt);
   });
 
+  // After a compaction the next real request starts from the summary, so the
+  // last payload no longer matches any prefix the session will send: replaying
+  // it warms a cache nobody reads (seen 2026-09-29: 119,849 tokens warmed three
+  // times after a compaction to 12k). Forget it until the next real request.
+  pi.on("session_compact", () => {
+    lastPayload = null;
+    cancel();
+  });
+
   pi.on("session_shutdown", cancel);
 }
