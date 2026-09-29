@@ -14,8 +14,14 @@
  * The check is over the whole input (path arguments and shell commands alike),
  * so `cat`, `read`, `rg`, `write` and a heredoc that copies the file all hit it.
  *
- * Config: `<agent-dir>/secret-guard.json` → { "deny": [regex, ...], "allow": [regex, ...] }
- * merged with the defaults below (`allow` wins). Env: PI_SECRET_GUARD=0/off disables it.
+ * A model often wants only the NAMES (which secrets exist, to pass one to a
+ * tool by name). With `nameFiles` configured the extension registers the
+ * `secret_names` tool: it reads those env-style files itself and returns the
+ * variable names, never a value. The block reason points to it.
+ *
+ * Config: `<agent-dir>/secret-guard.json` → { "deny": [regex, ...], "allow": [regex, ...],
+ * "nameFiles": [path, ...] } merged with the defaults below (`allow` wins).
+ * Env: PI_SECRET_GUARD=0/off disables it.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -25,7 +31,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export interface SecretGuardConfig {
   deny: RegExp[];
   allow: RegExp[];
+  nameFiles: string[];
 }
+
+export const NAMES_TOOL = "secret_names";
 
 export const DEFAULT_DENY: Array<[RegExp, string]> = [
   [/test-secrets\.env\b/i, "the playwright MCP types these by name (`--secrets`); the model never needs the values"],
@@ -40,16 +49,41 @@ export const DEFAULT_DENY: Array<[RegExp, string]> = [
 export function loadConfig(agentDir?: string): SecretGuardConfig {
   const dir = agentDir ?? process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
   const file = join(dir, "secret-guard.json");
-  const cfg: SecretGuardConfig = { deny: DEFAULT_DENY.map(([re]) => re), allow: [] };
+  const cfg: SecretGuardConfig = { deny: DEFAULT_DENY.map(([re]) => re), allow: [], nameFiles: [] };
   if (!existsSync(file)) return cfg;
   try {
-    const raw = JSON.parse(readFileSync(file, "utf-8")) as { deny?: string[]; allow?: string[] };
+    const raw = JSON.parse(readFileSync(file, "utf-8")) as { deny?: string[]; allow?: string[]; nameFiles?: string[] };
+    for (const f of raw.nameFiles ?? []) if (typeof f === "string" && f.trim()) cfg.nameFiles.push(expandHome(f.trim()));
     for (const s of raw.deny ?? []) cfg.deny.push(new RegExp(s, "i"));
     for (const s of raw.allow ?? []) cfg.allow.push(new RegExp(s, "i"));
   } catch {
     // an unreadable config keeps the defaults
   }
   return cfg;
+}
+
+function expandHome(p: string): string {
+  return p === "~" || p.startsWith("~/") ? join(process.env.HOME?.trim() || homedir(), p.slice(1)) : p;
+}
+
+/** Variable names of an env-style file (`NAME=value`, optional `export`), values dropped. */
+export function namesIn(text: string): string[] {
+  const names: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+    if (m && !names.includes(m[1])) names.push(m[1]);
+  }
+  return names;
+}
+
+export function secretNames(files: string[]): Array<{ file: string; names: string[]; error?: string }> {
+  return files.map((file) => {
+    try {
+      return { file, names: namesIn(readFileSync(file, "utf-8")) };
+    } catch {
+      return { file, names: [], error: "unreadable" };
+    }
+  });
 }
 
 export function isDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -59,7 +93,7 @@ export function isDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /** The denied pattern the tool input hits, with its reason, or null. */
 export function offending(toolName: string, input: unknown, cfg: SecretGuardConfig): { pattern: RegExp; why: string } | null {
-  if (toolName === "agent_message" || toolName === "subagent") return null;
+  if (toolName === "agent_message" || toolName === "subagent" || toolName === NAMES_TOOL) return null;
   let text: string;
   try {
     text = typeof input === "string" ? input : JSON.stringify(input ?? {});
@@ -82,6 +116,22 @@ export default function secretGuardExtension(pi: ExtensionAPI): void {
   pi.on("session_start", () => {
     cfg = loadConfig();
   });
+  const hasNamesTool = cfg.nameFiles.length > 0 && typeof (pi as any).registerTool === "function";
+  if (hasNamesTool) {
+    (pi as any).registerTool({
+      name: NAMES_TOOL,
+      label: "Secret names",
+      description:
+        "Names of the secrets available to tools that take a secret by name (for example the browser MCP typing a password). " +
+        "Returns variable names only, never a value. Use it instead of reading a secrets file.",
+      promptSnippet: "List the names of the available secrets (names only, never values)",
+      parameters: { type: "object", properties: {}, additionalProperties: false } as any,
+      async execute() {
+        const listed = secretNames(cfg.nameFiles);
+        return { content: [{ type: "text", text: JSON.stringify(listed, null, 2) }], details: listed };
+      },
+    } as any);
+  }
   pi.on("tool_call", (event: any) => {
     if (isDisabled()) return;
     const hit = offending(event.toolName, event.input, cfg);
@@ -90,6 +140,7 @@ export default function secretGuardExtension(pi: ExtensionAPI): void {
       block: true,
       reason:
         `secret-guard: this ${event.toolName} call touches a secret (${hit.pattern.source}): ${hit.why}. ` +
+        (hasNamesTool ? `For the names alone call \`${NAMES_TOOL}\`. ` : "") +
         `Do the step without the value in your context, or ask the coordinator.`,
     };
   });
