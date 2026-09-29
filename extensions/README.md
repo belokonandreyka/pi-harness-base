@@ -298,6 +298,19 @@ is an estimate until measured. `/credits` prints a per-model breakdown.
 Config `copilot-credits.json` → `{ "creditsPerDollar": 100 }`; env
 `PI_COPILOT_CREDITS_PER_DOLLAR` overrides it. Enabled in the subagent profile.
 
+## secret-guard
+
+Keeps secret files and secret-printing commands out of the model's tools. A
+worker with no browser tool once wrote its own Playwright script and read
+`~/.vitu/test-secrets.env` to type the passwords itself (2026-09-29); that file
+exists so the playwright MCP can type secrets by name with the model never
+seeing a value. Blocks any tool call whose input mentions a denied path or
+command: `test-secrets.env`, pi's `auth.json`, private keys, `.netrc`,
+certificate material, a Keychain lookup that prints the value
+(`security find-generic-password -w`), and environment dumps. Config
+`secret-guard.json` (`deny` / `allow` regex lists, `allow` wins);
+`PI_SECRET_GUARD=off` disables it for a session. Enabled in both profiles.
+
 ## poll-guard
 
 Deterministic replacement for the "do not poll a running subagent" rule the
