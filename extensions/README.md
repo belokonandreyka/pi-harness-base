@@ -208,7 +208,15 @@ refreshed after every turn. Tests: `bun test extensions/context-ceiling`.
 ## context-guard
 
 Lets the model see its own context gauge, warns it before pi's automatic
-compaction, and carries its own handoff note across the cut. Since 2026-09-26
+compaction, and carries its own handoff note across the cut. The warning is
+a transient message pinned at the position where it first fired, with its
+text frozen there (a second one is added when the note is saved); until
+2026-09-28 a fresh copy was appended last on every call, which put the
+provider's last-message cache breakpoint on a message that vanished before
+the next call, so every call in the warning zone re-wrote the whole
+conversation (read stuck at the system prefix, 70–100k tokens written per
+call). `measure/compaction.py` and the cache telemetry show whether it recurs:
+a run whose `cacheRead` stays flat while `cacheWrite` is large on short gaps. Since 2026-09-26
 the summary opens with a `Goal:` line (the task as originally asked) and the
 note starts with GOAL, and the guidelines tell the model to refocus after
 each compaction: check that the next action still lies on the path to that

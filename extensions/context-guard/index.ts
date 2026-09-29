@@ -13,9 +13,15 @@
  * What it does (idea from disler/self-compact-pi-agent, without its lock and
  * without cancelling pi's own compaction):
  * - `view_context` tool: used tokens, the compaction limit, tokens left, as JSON.
- * - From `warnTokensBefore` under the limit, every model call gets a transient
- *   message with live numbers asking for a `handoff_note` (appended last, so
- *   the cached prefix is untouched; never persisted).
+ * - From `warnTokensBefore` under the limit, model calls get a transient
+ *   message asking for a `handoff_note` (never persisted). It is inserted at
+ *   the position where the warning first fired and its text is frozen there;
+ *   a new one is added further down when the note is saved or the level
+ *   changes. Re-inserting a fresh message last on every call, as this did
+ *   until 2026-09-28, put Anthropic's last-message cache breakpoint on a
+ *   message that vanished before the next call, so every call in the
+ *   warning zone matched only the system prefix and re-wrote the whole
+ *   conversation (70–100k tokens per call, seen the day the ceiling went on).
  * - `handoff_note` tool stores the note (persisted as a session entry, so a
  *   restart keeps it). On compaction the extension runs pi's own summariser
  *   with a few extra rules (no invented progress, size cap, merge the previous
@@ -92,6 +98,10 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   let note: string | null = null;
   let compactions = 0;
   const reserveByModel = new Map<string, number>();
+  // Guidance messages of the current episode (cleared by compaction), each
+  // pinned to the message index it was first inserted at, with frozen text.
+  // Stable position + stable text = a stable prefix for the provider cache.
+  let pinned: Array<{ at: number; content: string; key: string }> = [];
 
   async function gauge(ctx: any): Promise<{ gauge: Gauge; contextWindow: number }> {
     const model = ctx?.model;
@@ -129,9 +139,25 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   pi.on("context", async (event: any, ctx: any) => {
     if (!cfg.enabled) return undefined;
     const { gauge: g } = await gauge(ctx);
-    if (levelFor(g) !== "warning") return undefined;
-    const messages = (event?.messages ?? []).filter((m: any) => !(m?.role === "custom" && m.customType === GUIDANCE_TYPE));
-    messages.push({ role: "custom", customType: GUIDANCE_TYPE, content: warningText(g, note !== null, cfg.maxNoteChars), display: false, timestamp: Date.now() });
+    const base = (event?.messages ?? []).filter((m: any) => !(m?.role === "custom" && m.customType === GUIDANCE_TYPE));
+    if (levelFor(g) !== "warning") {
+      if (pinned.length === 0) return undefined;
+      pinned = [];
+      return { messages: base };
+    }
+    // One guidance per state: "save a note" and "note saved". A state that has
+    // no pinned message yet gets one at the current end of the history; it
+    // stays there with the numbers it was born with (view_context has live ones).
+    const key = note !== null ? "saved" : "ask";
+    if (!pinned.some((p) => p.key === key)) {
+      pinned.push({ at: base.length, key, content: warningText(g, note !== null, cfg.maxNoteChars) });
+    }
+    const messages = [...base];
+    // `at` counts base messages; every pin inserted before it shifts it by one.
+    [...pinned].sort((a, b) => a.at - b.at).forEach((p, i) => {
+      const at = Math.min(p.at + i, messages.length);
+      messages.splice(at, 0, { role: "custom", customType: GUIDANCE_TYPE, content: p.content, display: false, timestamp: Date.now() });
+    });
     return { messages };
   });
 
@@ -201,6 +227,7 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   pi.on("session_compact", async (_event: any, ctx: any) => {
     const delivered = note !== null;
     note = null;
+    pinned = [];
     compactions++;
     if (delivered) notify(ctx, "context-guard: handoff note appended to the compaction summary", "info");
   });

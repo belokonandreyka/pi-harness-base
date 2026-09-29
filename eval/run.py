@@ -32,6 +32,7 @@ Config JSON:
       "thinking": "medium",
       "systemPromptToml": "~/.pi/agents/worker.toml",   # or "systemPrompt": "..."
       "appendSystemPrompt": ["No collaboration bus in this run: ..."],
+      "taskPrefix": "You are a READ-ONLY scout ...",   # optional: text put in front of the task prompt (the user message)
       "tools": "read,bash,edit,write,lsp_diagnostics,lsp_fix,rg,fd",
       "extraArgs": [],
       "env": {}
@@ -156,11 +157,13 @@ def pi_command(cfg, prompt, session_dir):
     return cmd
 
 
-def prompt_for_worktree(task, wt):
+def prompt_for_worktree(task, wt, prefix=None):
     """Coordinators write absolute paths to the main checkout into their prompts;
     the run happens in the worktree, so every spelling of the repo path is
     rewritten, otherwise the agent edits the real checkout."""
     prompt = task["prompt"]
+    if prefix:
+        prompt = prefix.rstrip() + "\n\n" + prompt
     repo = expand(task["repo"])
     home = os.path.expanduser("~")
     for spelling in sorted({task["repo"], repo, repo.replace(home, "~"), repo.replace(home, "$HOME")}, key=len, reverse=True):
@@ -177,7 +180,7 @@ def run_pi(cfg, task, cwd, out_dir, wt):
     session_dir = os.path.join(out_dir, "session")
     os.makedirs(session_dir, exist_ok=True)
     env = dict(os.environ, PI_CODING_AGENT_DIR=cfg["agentDir"], **(cfg.get("env") or {}))
-    prompt = prompt_for_worktree(task, wt)
+    prompt = prompt_for_worktree(task, wt, cfg.get("taskPrefix"))
     with open(os.path.join(out_dir, "prompt.md"), "w") as fh:
         fh.write(prompt)
     cmd = pi_command(cfg, prompt, session_dir)

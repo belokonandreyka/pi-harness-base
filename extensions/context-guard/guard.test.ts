@@ -8,6 +8,7 @@ import {
   contextView,
   DEFAULT_CONFIG,
   GUIDANCE_TYPE,
+  NOTE_TOOL,
   levelFor,
   loadConfig,
   NOTE_ENTRY_TYPE,
@@ -143,7 +144,7 @@ function setup(options: { tokens?: number | null; window?: number; entries?: any
 }
 
 describe("context-guard wiring", () => {
-  test("injects the warning only near the limit, always as the last message", async () => {
+  test("injects the warning only near the limit, pinned where it first fired, text frozen", async () => {
     const { handlers, ctx } = setup({ tokens: 100_000 });
     const base = [{ role: "user", content: "hi" }, { role: "assistant", content: "ok" }];
     expect(await handlers.get("context")!({ messages: base }, ctx)).toBeUndefined();
@@ -151,11 +152,47 @@ describe("context-guard wiring", () => {
     ctx.setTokens(135_000);
     const out = await handlers.get("context")!({ messages: [...base, { role: "custom", customType: GUIDANCE_TYPE, content: "stale" }] }, ctx);
     expect(out.messages).toHaveLength(3);
-    const last = out.messages.at(-1);
-    expect(last.role).toBe("custom");
-    expect(last.customType).toBe(GUIDANCE_TYPE);
-    expect(last.content).toContain("135,000");
-    expect(last.content).toContain("25,000 left");
+    const first = out.messages.at(-1);
+    expect(first.role).toBe("custom");
+    expect(first.customType).toBe(GUIDANCE_TYPE);
+    expect(first.content).toContain("135,000");
+    expect(first.content).toContain("25,000 left");
+
+    // Next call: the history grew and the numbers moved, but the guidance keeps
+    // its place (index 2) and its text, so the provider's cached prefix through
+    // the earlier messages still matches; only the new tail is new.
+    ctx.setTokens(140_000);
+    const grown = [...base, { role: "user", content: "tool result" }, { role: "assistant", content: "next" }];
+    const again = await handlers.get("context")!({ messages: grown }, ctx);
+    expect(again.messages).toHaveLength(5);
+    expect(again.messages[2].customType).toBe(GUIDANCE_TYPE);
+    expect(again.messages[2].content).toBe(first.content);
+    expect(again.messages.slice(3).map((m: any) => m.content)).toEqual(["tool result", "next"]);
+  });
+
+  test("the note-saved guidance is pinned too, and compaction clears every pin", async () => {
+    const { handlers, tools, ctx } = setup({ tokens: 135_000 });
+    const base = [{ role: "user", content: "hi" }, { role: "assistant", content: "ok" }];
+    const out1 = await handlers.get("context")!({ messages: base }, ctx);
+    expect(out1.messages).toHaveLength(3);
+    await tools.get(NOTE_TOOL)!.execute("id", { note: "GOAL: x\nDONE: y\nNEXT ACTION: z" }, new AbortController().signal, undefined, ctx);
+    const grown = [...base, { role: "user", content: "r1" }];
+    const out2 = await handlers.get("context")!({ messages: grown }, ctx);
+    // ask-guidance still at index 2, saved-guidance appended after the current end
+    expect(out2.messages.map((m: any) => m.customType ?? m.content)).toEqual(["hi", "ok", GUIDANCE_TYPE, "r1", GUIDANCE_TYPE]);
+    expect(out2.messages[4].content).toContain("Handoff note saved");
+    const grown2 = [...grown, { role: "assistant", content: "a2" }];
+    const out3 = await handlers.get("context")!({ messages: grown2 }, ctx);
+    expect(out3.messages.map((m: any) => m.customType ?? m.content)).toEqual(["hi", "ok", GUIDANCE_TYPE, "r1", GUIDANCE_TYPE, "a2"]);
+    expect(out3.messages[4].content).toBe(out2.messages[4].content);
+
+    await handlers.get("session_compact")!({}, ctx);
+    ctx.setTokens(50_000);
+    expect(await handlers.get("context")!({ messages: [{ role: "user", content: "summary" }] }, ctx)).toBeUndefined();
+    ctx.setTokens(135_000);
+    const fresh = await handlers.get("context")!({ messages: [{ role: "user", content: "summary" }] }, ctx);
+    expect(fresh.messages.map((m: any) => m.customType ?? m.content)).toEqual(["summary", GUIDANCE_TYPE]);
+    expect(fresh.messages[1].content).not.toContain("Handoff note saved");
   });
 
   test("a 1M window never warns unless something clamps it", async () => {

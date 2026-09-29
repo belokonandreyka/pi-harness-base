@@ -17,6 +17,7 @@ Four scripts, all plain Python, no dependencies:
 | `hidden_tests.py` | runs the reference commit's spec files against each candidate (hidden tests) and, with `--related`, the existing specs that import the changed files (regressions); code, not opinion |
 | `report.py` | per-config table and a task × config grid of every run; `--baseline DIR` lists what flipped against an earlier result set |
 | `compare_judges.py` | the same grid with every judge slot side by side; `--agreement` adds pairwise pass agreement, gap kinds and evidence checks |
+| `scout_score.py` | scores reconnaissance runs (a config with `taskPrefix` "You are a READ-ONLY scout…") by the overlap between the files the report names and the files the reference commit touched; recall is what a scout is paid for |
 
 ## Workflow
 
