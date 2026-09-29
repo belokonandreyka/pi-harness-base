@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import droppedToolCallGuard, { RETRY_MESSAGE, droppedToolCall } from "./index.ts";
+import droppedToolCallGuard, { EMPTY_REPLY_MESSAGE, RETRY_MESSAGE, droppedToolCall, emptyReply } from "./index.ts";
 
 const ORIGINAL = process.env.PI_DROPPED_TOOLCALL_GUARD;
 afterEach(() => {
@@ -41,6 +41,35 @@ describe("dropped-toolcall-guard", () => {
     g.end([thinkingOnly]);
     expect(g.sent.length).toBe(2);
     expect(g.notices.at(-1)).toContain("not retrying");
+  });
+
+  test("detects an empty normal stop, not an aborted or failed one", () => {
+    const empty = { role: "assistant", stopReason: "stop", content: [] };
+    expect(emptyReply([{ role: "toolResult", content: [] }, empty])).toBe(true);
+    expect(emptyReply([{ ...empty, content: [{ type: "thinking", thinking: "…" }] }])).toBe(true);
+    expect(emptyReply([{ ...empty, content: [{ type: "text", text: "  \n" }] }])).toBe(true);
+    expect(emptyReply([stop])).toBe(false);
+    expect(emptyReply([withCall])).toBe(false);
+    expect(emptyReply([{ ...empty, stopReason: "aborted" }])).toBe(false);
+    expect(emptyReply([{ ...empty, stopReason: "error", errorMessage: "503" }])).toBe(false);
+    expect(emptyReply([{ ...empty, errorMessage: "boom" }])).toBe(false);
+    expect(emptyReply([empty, { role: "user", content: "x" }])).toBe(false);
+    expect(emptyReply([])).toBe(false);
+  });
+
+  test("an empty reply is retried, the counter resets after a normal turn", () => {
+    delete process.env.PI_DROPPED_TOOLCALL_GUARD;
+    const empty = { role: "assistant", stopReason: "stop", content: [] };
+    const g = setup();
+    g.end([empty]);
+    g.end([empty]);
+    expect(g.sent).toEqual([EMPTY_REPLY_MESSAGE, EMPTY_REPLY_MESSAGE]);
+    g.end([empty]);
+    expect(g.sent.length).toBe(2);
+    expect(g.notices.at(-1)).toContain("not retrying");
+    g.end([stop]);
+    g.end([empty]);
+    expect(g.sent.length).toBe(3);
   });
 
   test("env switch disables", () => {
