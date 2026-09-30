@@ -11,9 +11,18 @@ afterEach(() => {
   else process.env.PI_SECRET_GUARD = ORIGINAL;
 });
 
+// The extension reads <agent-dir>/secret-guard.json; point it at an empty temp
+// dir so the developer's live profile cannot leak into the expectations.
 function setup() {
   const handlers = new Map<string, Handler>();
-  secretGuardExtension({ on: (event: string, handler: Handler) => handlers.set(event, handler) } as any);
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "secret-guard-defaults-"));
+  try {
+    secretGuardExtension({ on: (event: string, handler: Handler) => handlers.set(event, handler) } as any);
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  }
   return (toolName: string, input: any) => handlers.get("tool_call")?.({ toolName, input }, {});
 }
 
@@ -88,6 +97,34 @@ describe("secret-guard", () => {
       expect(blocked.block).toBe(true);
       expect(blocked.reason).toContain(NAMES_TOOL);
       expect(handlers.get("tool_call")?.({ toolName: NAMES_TOOL, input: {} }, {})).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previous;
+    }
+  });
+
+  test("a deny entry can carry its own reason", () => {
+    const dir = mkdtempSync(join(tmpdir(), "secret-guard-why-"));
+    writeFileSync(join(dir, "secret-guard.json"), JSON.stringify({ deny: ["plain\\.env", { pattern: "creds\\.json", why: "run scripts/list-users.py instead" }] }));
+    const cfg = loadConfig(dir);
+    expect(offending("bash", { command: "cat creds.json" }, cfg)?.why).toBe("run scripts/list-users.py instead");
+    expect(offending("bash", { command: "cat plain.env" }, cfg)?.why).toBe("listed in secret-guard.json");
+    expect(offending("bash", { command: "cat list-users.py" }, cfg)).toBeNull();
+  });
+
+  test("a config edit applies to the running session", () => {
+    const dir = mkdtempSync(join(tmpdir(), "secret-guard-reload-"));
+    const previous = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = dir;
+    try {
+      const handlers = new Map<string, Handler>();
+      secretGuardExtension({ on: (e: string, h: Handler) => handlers.set(e, h) } as any);
+      const call = () => handlers.get("tool_call")?.({ toolName: "bash", input: { command: "cat ~/.vitu/test-secrets.env" } }, {});
+      expect(call()?.block).toBe(true);
+      writeFileSync(join(dir, "secret-guard.json"), JSON.stringify({ allow: ["test-secrets\\.env"] }));
+      const { utimesSync } = require("node:fs");
+      utimesSync(join(dir, "secret-guard.json"), new Date(Date.now() + 5000), new Date(Date.now() + 5000));
+      expect(call()).toBeUndefined();
     } finally {
       if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
       else process.env.PI_CODING_AGENT_DIR = previous;

@@ -19,11 +19,12 @@
  * `secret_names` tool: it reads those env-style files itself and returns the
  * variable names, never a value. The block reason points to it.
  *
- * Config: `<agent-dir>/secret-guard.json` → { "deny": [regex, ...], "allow": [regex, ...],
- * "nameFiles": [path, ...] } merged with the defaults below (`allow` wins).
+ * Config: `<agent-dir>/secret-guard.json` → { "deny": [regex | { "pattern", "why" }, ...],
+ * "allow": [regex, ...], "nameFiles": [path, ...] } merged with the defaults below
+ * (`allow` wins). A deny entry's `why` names the sanctioned route in the block reason.
  * Env: PI_SECRET_GUARD=0/off disables it.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -32,6 +33,7 @@ export interface SecretGuardConfig {
   deny: RegExp[];
   allow: RegExp[];
   nameFiles: string[];
+  why: Map<string, string>;
 }
 
 export const NAMES_TOOL = "secret_names";
@@ -49,12 +51,27 @@ export const DEFAULT_DENY: Array<[RegExp, string]> = [
 export function loadConfig(agentDir?: string): SecretGuardConfig {
   const dir = agentDir ?? process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
   const file = join(dir, "secret-guard.json");
-  const cfg: SecretGuardConfig = { deny: DEFAULT_DENY.map(([re]) => re), allow: [], nameFiles: [] };
+  const cfg: SecretGuardConfig = {
+    deny: DEFAULT_DENY.map(([re]) => re),
+    allow: [],
+    nameFiles: [],
+    why: new Map(DEFAULT_DENY.map(([re, why]) => [re.source, why])),
+  };
   if (!existsSync(file)) return cfg;
   try {
-    const raw = JSON.parse(readFileSync(file, "utf-8")) as { deny?: string[]; allow?: string[]; nameFiles?: string[] };
+    const raw = JSON.parse(readFileSync(file, "utf-8")) as {
+      deny?: Array<string | { pattern: string; why?: string }>;
+      allow?: string[];
+      nameFiles?: string[];
+    };
     for (const f of raw.nameFiles ?? []) if (typeof f === "string" && f.trim()) cfg.nameFiles.push(expandHome(f.trim()));
-    for (const s of raw.deny ?? []) cfg.deny.push(new RegExp(s, "i"));
+    for (const d of raw.deny ?? []) {
+      const pattern = typeof d === "string" ? d : d?.pattern;
+      if (typeof pattern !== "string" || !pattern) continue;
+      const re = new RegExp(pattern, "i");
+      cfg.deny.push(re);
+      cfg.why.set(re.source, typeof d === "object" && d.why ? d.why : "listed in secret-guard.json");
+    }
     for (const s of raw.allow ?? []) cfg.allow.push(new RegExp(s, "i"));
   } catch {
     // an unreadable config keeps the defaults
@@ -104,17 +121,42 @@ export function offending(toolName: string, input: unknown, cfg: SecretGuardConf
   if (cfg.allow.some((re) => re.test(text))) return null;
   for (const re of cfg.deny) {
     if (re.test(text)) {
-      const why = DEFAULT_DENY.find(([d]) => d.source === re.source)?.[1] ?? "listed in secret-guard.json";
+      const why = cfg.why.get(re.source) ?? "listed in secret-guard.json";
       return { pattern: re, why };
     }
   }
   return null;
 }
 
+function resolveAgentDir(): string {
+  return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+}
+
+function configStamp(agentDir: string): number {
+  try {
+    return statSync(join(agentDir, "secret-guard.json")).mtimeMs;
+  } catch {
+    return -1;
+  }
+}
+
 export default function secretGuardExtension(pi: ExtensionAPI): void {
-  let cfg = loadConfig();
+  const agentDir = resolveAgentDir();
+  let cfg = loadConfig(agentDir);
+  let stamp = configStamp(agentDir);
+  // Reload when secret-guard.json changes, so a rule edit applies to the
+  // running session instead of waiting for a restart. One stat per tool call.
+  const current = (): SecretGuardConfig => {
+    const now = configStamp(agentDir);
+    if (now !== stamp) {
+      stamp = now;
+      cfg = loadConfig(agentDir);
+    }
+    return cfg;
+  };
   pi.on("session_start", () => {
-    cfg = loadConfig();
+    stamp = configStamp(agentDir);
+    cfg = loadConfig(agentDir);
   });
   const hasNamesTool = cfg.nameFiles.length > 0 && typeof (pi as any).registerTool === "function";
   if (hasNamesTool) {
@@ -127,14 +169,14 @@ export default function secretGuardExtension(pi: ExtensionAPI): void {
       promptSnippet: "List the names of the available secrets (names only, never values)",
       parameters: { type: "object", properties: {}, additionalProperties: false } as any,
       async execute() {
-        const listed = secretNames(cfg.nameFiles);
+        const listed = secretNames(current().nameFiles);
         return { content: [{ type: "text", text: JSON.stringify(listed, null, 2) }], details: listed };
       },
     } as any);
   }
   pi.on("tool_call", (event: any) => {
     if (isDisabled()) return;
-    const hit = offending(event.toolName, event.input, cfg);
+    const hit = offending(event.toolName, event.input, current());
     if (!hit) return;
     return {
       block: true,
