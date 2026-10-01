@@ -373,6 +373,24 @@ class PlanAndStore(unittest.TestCase):
         self.assertNotIn("deploy:pay-sdk/test", p2["tickets"]["APP-1458"]["reasons"])
         self.assertEqual(p2["tickets"]["PAY-5747"]["reasons"], [])
 
+    def test_service_deploy_counts_only_when_it_touches_the_scout_paths(self):
+        self.store()
+        other = commit(self.portal, {"site/Scripts/app/Other/c.ts": "1"}, "PAY-5747 unrelated file")
+        self.comments["PAY-5747"].append(jenkins(10, repo="web-app", sha=other, subject="PAY-5747 unrelated file"))
+        p = self.plan()
+        self.assertNotIn("service-deploy:web-app", p["tickets"]["APP-1458"]["reasons"])
+        self.store(texts=[])
+        hit = commit(self.portal, {"site/Scripts/app/Reports4/a.ts": "3"}, "PAY-5747 touches Reports4")
+        self.comments["PAY-5747"].append(jenkins(11, repo="web-app", sha=hit, subject="PAY-5747 touches Reports4"))
+        p = self.plan()
+        self.assertIn("service-deploy:web-app", p["tickets"]["APP-1458"]["reasons"])
+
+    def test_service_deploy_of_an_unknown_commit_still_counts(self):
+        self.store()
+        self.comments["PAY-5747"].append(jenkins(12, repo="web-app", sha="f" * 40, subject="PAY-5747 from a branch"))
+        p = self.plan()
+        self.assertIn("service-deploy:web-app", p["tickets"]["APP-1458"]["reasons"])
+
     def test_git_signals(self):
         self.store()
         # 1) a commit mentioning the key on origin/test

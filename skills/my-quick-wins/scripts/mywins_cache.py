@@ -363,6 +363,22 @@ class Repo:
         out = self.git("log", "--format=%H", f"{old}..{new}", "--", *paths)
         return len(out.splitlines()) if out else 0
 
+    def shipped_touches(self, shas: list[str], paths: list[str]) -> bool | None:
+        """Did any of these deployed commits change a file under `paths`?
+        True / False when every commit is known locally; None when one is not
+        (a deploy from a branch the local clone has never fetched): the caller
+        then has to assume it did."""
+        if not paths:
+            return False
+        unknown = False
+        for s in shas:
+            if not self.git("cat-file", "-t", s):
+                unknown = True
+                continue
+            if self.git("show", "--name-only", "--format=", s, "--", *paths):
+                return True
+        return None if unknown else False
+
     def rules_hash(self, paths: list[str]) -> str:
         if not self.ref:
             return ""
@@ -513,12 +529,18 @@ def build_plan(issues: dict[str, dict], comments_by_key: dict[str, list[dict]], 
                 if t:
                     reasons.append(f"git:{t} commit(s) touch scout paths in {n}")
         snap["seen"]["branchTips"] = tips
-        # a Jenkins build on any backlog ticket lists every commit it shipped for
-        # that service; if this ticket's scope lives in that service, its
-        # verdict was made against older code (deploys may come from branches
-        # the local git range never sees, so this is checked regardless of git)
-        for repo_name in new_deploy_commits:
-            if repo_name in paths and prev:
+        # a CI build on any backlog ticket lists every commit it shipped for that
+        # service; the verdict is stale only if one of those commits changed a
+        # file under this ticket's scout paths. In a monorepo "the scope lives in
+        # that service" alone fires on every ticket after any one-line deploy.
+        # A commit the local clone has never seen (deploys may come from branches
+        # the git range does not cover) still counts, since it cannot be checked.
+        for repo_name, shipped in new_deploy_commits.items():
+            if repo_name not in paths or not prev:
+                continue
+            r = repos.get(repo_name)
+            touched = r.shipped_touches([c["sha"] for c in shipped], paths[repo_name]) if r and r.ok else None
+            if touched is not False:
                 reasons.append(f"service-deploy:{repo_name}")
         if k in keys_in_new_deploys and prev and not any(x.startswith("deploy:") for x in reasons):
             reasons.append("deploy:mentioned in another ticket's build")

@@ -224,7 +224,9 @@ What invalidates a verdict (the script decides, you don't):
   — the cache predates that part, one-off re-scout;
 - `deploy:<repo>/<env>` — a new CI "deployed to …" comment on the ticket
   (its own code moved); `service-deploy:<repo>` — a CI build on *another*
-  backlog ticket shipped commits for a repo this verdict's `Paths` point at;
+  backlog ticket shipped a commit that changed a file under this verdict's
+  `Paths` in that repo (a shipped commit the local clone has never seen still
+  counts: it cannot be checked);
 - `git:…` — since the cached integration-ref sha: commits mentioning the
   key **or any linked ticket's key** (backend work lands under the backend
   task's key, not the UI ticket's), commits touching the verdict's `Paths`
