@@ -37,6 +37,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
+  asksToContinue,
+  RESUME_TEXT,
   appendNote,
   compactionLimit,
   contextView,
@@ -64,6 +66,8 @@ export interface GuardDeps {
   reserveTokens(ctx: any): Promise<number>;
   /** Runs pi's own summariser with our instructions and returns its CompactionResult. */
   runCompaction(event: any, ctx: any, instructions: string): Promise<{ summary: string; [k: string]: unknown }>;
+  /** Schedules work after the current event handler returns (tests run it inline). */
+  defer?(fn: () => void): void;
 }
 
 export const defaultDeps: GuardDeps = {
@@ -102,6 +106,11 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   // pinned to the message index it was first inserted at, with frozen text.
   // Stable position + stable text = a stable prefix for the provider cache.
   let pinned: Array<{ at: number; content: string; key: string }> = [];
+  // Whether a turn is running, and how the last one ended: a compaction that
+  // runs after the turn ended does not resume anything by itself.
+  let running = false;
+  let lastAssistantText = "";
+  const defer = deps.defer ?? ((fn: () => void) => setTimeout(fn, 0));
 
   async function gauge(ctx: any): Promise<{ gauge: Gauge; contextWindow: number }> {
     const model = ctx?.model;
@@ -124,6 +133,18 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   function notify(ctx: any, text: string, level: "info" | "warning" | "error" = "info"): void {
     if (ctx?.hasUI && typeof ctx.ui?.notify === "function") ctx.ui.notify(text, level);
   }
+
+  pi.on("agent_start", async () => {
+    running = true;
+  });
+
+  pi.on("agent_end", async (event: any) => {
+    running = false;
+    const messages = Array.isArray(event?.messages) ? event.messages : [];
+    const last = [...messages].reverse().find((m: any) => m?.role === "assistant");
+    const content = Array.isArray(last?.content) ? last.content : [];
+    lastAssistantText = content.filter((b: any) => b?.type === "text").map((b: any) => String(b.text ?? "")).join("\n");
+  });
 
   pi.on("session_start", async (_event: any, ctx: any) => {
     try {
@@ -199,9 +220,10 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
         // an unsaved entry only matters across a restart
       }
       const { gauge: g } = await gauge(ctx);
-      const left = g.tokens === null ? "unknown" : `${k(Math.max(0, g.limit - g.tokens))} tokens`;
+      // No countdown in the text: "0k tokens left" read as "stop now" and the
+      // model ended its turn asking the user to say continue (2026-10-01/02).
       return {
-        content: [{ type: "text", text: `Handoff note saved (${note.length} chars). It is appended verbatim to the next compaction summary; ${left} left before compaction. Do not end your turn for the compaction, it runs inside your turn. Keep working.` }],
+        content: [{ type: "text", text: `Handoff note saved (${note.length} chars). It is appended verbatim to the next compaction summary. The compaction runs inside your turn and you continue right after it, so carry on with the next action now; never end the turn or ask the user to say "continue" because of the context size.` }],
         details: { noteChars: note.length, tokensLeft: g.tokens === null ? null : Math.max(0, g.limit - g.tokens) },
       };
     },
@@ -230,6 +252,11 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
     pinned = [];
     compactions++;
     if (delivered) notify(ctx, "context-guard: handoff note appended to the compaction summary", "info");
+    if (cfg.resumeAfterCompaction && !running && asksToContinue(lastAssistantText)) {
+      lastAssistantText = "";
+      notify(ctx, "context-guard: the turn ended for the compaction; resuming it", "info");
+      defer(() => pi.sendUserMessage(RESUME_TEXT));
+    }
   });
 
   pi.registerCommand("context-guard", {

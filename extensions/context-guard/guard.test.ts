@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   appendNote,
+  asksToContinue,
+  RESUME_TEXT,
   compactionLimit,
   contextView,
   DEFAULT_CONFIG,
@@ -109,7 +111,9 @@ function setup(options: { tokens?: number | null; window?: number; entries?: any
   const commands = new Map<string, { handler: Handler }>();
   const appended: Array<[string, any]> = [];
   const calls: Array<{ instructions: string }> = [];
+  const sent: string[] = [];
   const deps: GuardDeps = {
+    defer: (fn) => fn(),
     reserveTokens: async () => 16384,
     runCompaction: async (_event, _ctx, instructions) => {
       calls.push({ instructions });
@@ -123,6 +127,7 @@ function setup(options: { tokens?: number | null; window?: number; entries?: any
       registerTool: (tool: any) => tools.set(tool.name, tool),
       registerCommand: (name: string, def: { handler: Handler }) => commands.set(name, def),
       appendEntry: (type: string, data: any) => appended.push([type, data]),
+      sendUserMessage: (text: string) => sent.push(text),
     } as any,
     deps,
   );
@@ -140,7 +145,7 @@ function setup(options: { tokens?: number | null; window?: number; entries?: any
       tokens = n;
     },
   };
-  return { handlers, tools, commands, appended, calls, ctx, notes };
+  return { handlers, tools, commands, appended, calls, ctx, notes, sent };
 }
 
 describe("context-guard wiring", () => {
@@ -207,7 +212,8 @@ describe("context-guard wiring", () => {
 
     const result = await noteTool.execute("2", { note: "DONE: tests pass\nNEXT ACTION: commit" }, undefined, undefined, ctx);
     expect(result.content[0].text).toContain("saved (36 chars)");
-    expect(result.content[0].text).toContain("20k tokens left");
+    expect(result.content[0].text).toContain("carry on with the next action");
+    expect(result.details.tokensLeft).toBe(20_000);
     expect(appended).toEqual([[NOTE_ENTRY_TYPE, expect.objectContaining({ note: "DONE: tests pass\nNEXT ACTION: commit" })]]);
 
     const view = JSON.parse((await tools.get("view_context")!.execute("3", {}, undefined, undefined, ctx)).content[0].text);
@@ -255,3 +261,49 @@ describe("context-guard wiring", () => {
     expect(view.handoff_note_chars).toBe(19);
   });
 });
+
+describe("resume after a compaction at idle", () => {
+  test("recognises the 'context is over, say continue' stop and not a real question", () => {
+    expect(asksToContinue("Мій контекст закінчився. Напиши «продовжуй», і я почну з B3-3.")).toBe(true);
+    expect(asksToContinue("Мій контекст закінчується, тому запуск буде першою дією після стиснення.")).toBe(true);
+    expect(asksToContinue("My context window is almost full; say continue and I will start batch 25.")).toBe(true);
+    expect(asksToContinue("Підтверджуєш D7 і D8?")).toBe(false);
+    expect(asksToContinue("Чекаю твого «ок», щоб почати Phase B з кроку B1.")).toBe(false);
+    expect(asksToContinue("Пачку 21 запустив, чекаю його звіту.")).toBe(false);
+  });
+
+  const end = (text: string) => ({ messages: [{ role: "user", content: "x" }, { role: "assistant", content: [{ type: "text", text }] }] });
+
+  test("a turn that ended for the compaction is resumed once, after the compaction", async () => {
+    const { handlers, ctx, sent } = setup();
+    await handlers.get("agent_start")!({}, ctx);
+    await handlers.get("agent_end")!(end("Закомітив B3-2. Мій контекст закінчився. Напиши «продовжуй»."), ctx);
+    expect(sent).toEqual([]);
+    await handlers.get("session_compact")!({}, ctx);
+    expect(sent).toEqual([RESUME_TEXT]);
+    await handlers.get("session_compact")!({}, ctx);
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a mid-turn compaction, a real question, or the switch off: no resume", async () => {
+    const midTurn = setup();
+    await midTurn.handlers.get("agent_end")!(end("Мій контекст закінчився. Напиши «продовжуй»."), midTurn.ctx);
+    await midTurn.handlers.get("agent_start")!({}, midTurn.ctx);
+    await midTurn.handlers.get("session_compact")!({}, midTurn.ctx);
+    expect(midTurn.sent).toEqual([]);
+
+    const question = setup();
+    await question.handlers.get("agent_end")!(end("Підтверджуєш D7 і D8?"), question.ctx);
+    await question.handlers.get("session_compact")!({}, question.ctx);
+    expect(question.sent).toEqual([]);
+  });
+
+  test("the handoff result carries no countdown", async () => {
+    const { tools, ctx } = setup({ tokens: 150_000 });
+    const res = await tools.get(NOTE_TOOL)!.execute("id", { note: "NEXT ACTION: z" }, new AbortController().signal, undefined, ctx);
+    expect(res.content[0].text).not.toMatch(/tokens? left|\dk\b/);
+    expect(res.content[0].text).toContain("never end the turn");
+    expect(res.details.tokensLeft).toBe(Math.max(0, 160000 - 150000));
+  });
+});
+

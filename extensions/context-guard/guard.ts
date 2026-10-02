@@ -9,6 +9,8 @@ export interface GuardConfig {
   maxNoteChars: number;
   /** Size the summariser is asked to stay under; each compaction re-summarises the previous summary, so an unbounded one grows every cycle. */
   maxSummaryChars: number;
+  /** Start a turn after a compaction that ran once the model had already ended its turn asking to be told to continue. */
+  resumeAfterCompaction: boolean;
 }
 
 export const DEFAULT_CONFIG: GuardConfig = {
@@ -16,6 +18,7 @@ export const DEFAULT_CONFIG: GuardConfig = {
   warnTokensBefore: 30000,
   maxNoteChars: 6000,
   maxSummaryChars: 12000,
+  resumeAfterCompaction: true,
 };
 
 /** pi's default `compaction.reserveTokens`, used when the settings cannot be read. */
@@ -35,6 +38,7 @@ export function loadConfig(agentDir: string): GuardConfig {
       warnTokensBefore: num(raw.warnTokensBefore, DEFAULT_CONFIG.warnTokensBefore),
       maxNoteChars: num(raw.maxNoteChars, DEFAULT_CONFIG.maxNoteChars),
       maxSummaryChars: num(raw.maxSummaryChars, DEFAULT_CONFIG.maxSummaryChars),
+      resumeAfterCompaction: raw.resumeAfterCompaction !== false,
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -70,6 +74,24 @@ export function warningText(g: Gauge, noteSaved: boolean, maxNoteChars: number):
   }
   return `[context-guard] Context is at ${fmt(tokens)} of the ${fmt(g.limit)}-token compaction limit (${fmt(left)} left). At the limit pi replaces everything but the most recent messages with a summary written by another model, which tends to lose what you were about to do. Finish the current atomic step, then call ${NOTE_TOOL} with what that summary would lose: DONE (exact paths, commands, verified results), IN PROGRESS, key decisions, and the exact NEXT ACTION as the last line (max ${fmt(maxNoteChars)} chars). The note is appended to the summary verbatim. Avoid large reads until then; ${VIEW_TOOL} shows the live numbers. Compaction happens by itself inside your turn when the limit is reached and your work continues after it — never end your turn to "wait for the compaction": ending the turn hands control to the user and nothing resumes on its own.`;
 }
+
+/**
+ * The model sometimes ends its turn at the limit with "my context is full,
+ * say continue" although the handoff result told it the compaction runs inside
+ * the turn (seen twice in one day, 2026-10-01/02). pi then compacts at idle and
+ * nothing resumes. These are the phrasings of that stop, in the languages the
+ * sessions use; a turn that ends with a real question for the user does not
+ * match, so it is never answered on the user's behalf.
+ */
+const CONTEXT_END = /(контекст\S*\s+(?:майже\s+)?(?:закінч|скінч|вичерп|заповн|добіга)|context\s+(?:window\s+)?(?:is\s+)?(?:full|almost\s+full|running\s+out|ran\s+out|exhausted|nearly\s+exhausted)|(?:compaction|компакт\S*|стиснен\S*)\s+(?:is\s+)?(?:next|imminent|coming|буде|наступн))/i;
+const SAY_CONTINUE = /(?:напиши|скажи|type|say|write|send|reply)\W{0,4}[«"“'`]?\s*(?:продовжуй|продовж|продовжити|далі|continue|go\s+on)/i;
+
+export function asksToContinue(text: string): boolean {
+  return CONTEXT_END.test(text) || SAY_CONTINUE.test(text);
+}
+
+export const RESUME_TEXT =
+  "[context-guard] The compaction has finished; nothing was waiting on the user. Continue with the NEXT ACTION from the handoff note at the end of the summary. Compaction never needs the user to say \"continue\": it runs inside your turn.";
 
 export interface ViewInput {
   gauge: Gauge;
