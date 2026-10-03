@@ -28,6 +28,11 @@
  * branch take the accent, and the thinking level takes the same colour as the
  * editor border at that level.
  *
+ * The same layout serves wide terminals with nothing shortened (`full`): the
+ * whole path, role, provider, model id and thinking level, the gateway budget
+ * line or the Copilot credits line as their extensions write it, and a fourth
+ * line with the other extensions' statuses (agent name, peers, unread, locks).
+ *
  * Every line is cut to the width: pi-tui aborts the process on a line wider
  * than the terminal (see the 2026-09-17 narrow-pane crash).
  */
@@ -156,10 +161,10 @@ export function quotaText(used: number, total: number): string {
 	return `${Math.round(used)}/${Math.round(total)}`;
 }
 
-/** Share of the Copilot entitlement used: muted, then yellow from 80%, red from 95%. */
+/** Share of the Copilot entitlement used: bright text, then yellow from 80%, red from 95%. */
 export function quotaColor(used: number, total: number): string {
 	const share = total > 0 ? used / total : 0;
-	return share >= 0.95 ? "red" : share >= 0.8 ? "yellow" : "muted";
+	return share >= 0.95 ? "red" : share >= 0.8 ? "yellow" : "text";
 }
 
 const THINKING: Record<string, string> = { off: "off", minimal: "min", low: "low", medium: "mid", high: "hi", xhigh: "xhi", max: "max" };
@@ -186,6 +191,11 @@ export interface NarrowInput {
 	budgetStatus?: string;
 	/** Copilot credits used this period and the entitlement, from the copilot-usage snapshot. */
 	copilotQuota?: { used: number; total: number };
+	/** Full mode: the snapshot's own text ("22k/60k credits · 12d"), or why it is missing. */
+	copilotText?: string;
+	copilotNote?: string;
+	/** Full mode: the other extensions' status texts for line 4 (ceiling and gateway-budget excluded). */
+	otherStatuses?: string[];
 	thinking?: string;
 	fmtTokens: (n: number) => string;
 	/** theme.fg: colour a string with a theme token. */
@@ -199,13 +209,17 @@ export interface NarrowInput {
 const MIN_GAP = 2;
 
 export function narrowLines(v: NarrowInput, width: number): string[] {
+	return footerLines(v, width, false);
+}
+
+export function footerLines(v: NarrowInput, width: number, full: boolean): string[] {
 	const cut = (s: string) => v.truncate(s, Math.max(0, width), "…");
 	const dim = (t: string) => v.fg("dim", t);
-	const path = shortPath(v.pwd);
+	const path = full ? v.pwd : shortPath(v.pwd);
 	let line1 = v.fg("muted", path) + (v.branch ? dim(" (") + v.fg("accent", v.branch) + dim(")") : "");
 	const roleColor = v.role === "orchestrator" ? "accent" : "muted";
 	const roleShort = v.role === "orchestrator" ? "orch" : v.role === "subagent" ? "sub" : v.role;
-	for (const role of roleShort !== v.role ? [v.role, roleShort] : [v.role]) {
+	for (const role of !full && roleShort !== v.role ? [v.role, roleShort] : [v.role]) {
 		const pad = width - v.measure(line1) - v.measure(role);
 		if (pad >= MIN_GAP) {
 			line1 = line1 + " ".repeat(pad) + v.fg(roleColor, role);
@@ -237,20 +251,26 @@ export function narrowLines(v: NarrowInput, width: number): string[] {
 	const letter = providerLetter(v.provider);
 	if (letter === "c") {
 		money.push(v.fg("text", `${Math.round(v.cost * 100)} cr`));
-		if (v.copilotQuota && v.copilotQuota.total > 0) {
-			const q = v.copilotQuota;
-			money.push(v.fg(quotaColor(q.used, q.total), quotaText(q.used, q.total)));
+		const q = v.copilotQuota;
+		if (q && q.total > 0) {
+			money.push(v.fg(quotaColor(q.used, q.total), full && v.copilotText ? v.copilotText : quotaText(q.used, q.total)));
+		} else if (full && (v.copilotText || v.copilotNote)) {
+			money.push(dim(v.copilotText ?? v.copilotNote ?? ""));
 		}
 	} else if (v.cost) money.push(v.fg("text", `$${v.cost.toFixed(3)}`));
 	const weekly = letter === "g" ? parseWeekly(v.budgetStatus) : null;
-	if (weekly) money.push(v.fg(weekly.level === "over" ? "red" : weekly.level === "near" ? "yellow" : "muted", `wk $${weekly.amount}`));
+	if (weekly) {
+		// Bright like the cost next to it: the budget is what this line is read for.
+		const color = weekly.level === "over" ? "red" : weekly.level === "near" ? "yellow" : "text";
+		money.push(v.fg(color, full && v.budgetStatus ? v.budgetStatus.trim() : `wk $${weekly.amount}`));
+	}
 	const left3 = money.join(dim(" · "));
 
 	const rights: string[] = [];
 	if (v.model) {
-		const name = v.fg("text", shortModel(v.model));
-		const prov = letter ? dim(`(${letter}) `) : "";
-		const level = shortThinking(v.thinking);
+		const name = v.fg("text", full ? v.model : shortModel(v.model));
+		const prov = full ? (v.provider ? dim(`(${v.provider}) `) : "") : letter ? dim(`(${letter}) `) : "";
+		const level = full ? v.thinking : shortThinking(v.thinking);
 		const levelPart = level ? dim(" · ") + v.fg(THINKING_COLOR[v.thinking ?? ""] ?? "muted", level) : "";
 		if (level) rights.push(prov + name + levelPart);
 		if (prov) rights.push(prov + name);
@@ -264,5 +284,7 @@ export function narrowLines(v: NarrowInput, width: number): string[] {
 			break;
 		}
 	}
-	return [cut(line1), cut(line2), cut(line3)].filter((l) => l.length > 0);
+	const lines = [cut(line1), cut(line2), cut(line3)];
+	if (full && v.otherStatuses?.length) lines.push(cut(v.otherStatuses.join(" ")));
+	return lines.filter((l) => l.length > 0);
 }

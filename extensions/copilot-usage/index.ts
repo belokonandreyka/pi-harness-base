@@ -13,15 +13,13 @@
  *   # (paste a fine-grained GitHub PAT with no repo scopes — auth-only)
  */
 
-import { agentRole, colorize, narrowLines, narrowThreshold, parseCeiling } from "./narrow-footer.ts";
+import { agentRole, colorize, footerLines, narrowThreshold, parseCeiling } from "./narrow-footer.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const KEYCHAIN_SERVICE = "github-copilot-token";
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
 const ENDPOINT = "https://api.github.com/copilot_internal/user";
-const ORANGE_OPEN = "\x1b[38;5;208m";
-const RESET = "\x1b[0m";
 
 interface QuotaSnapshot {
 	remaining?: number;
@@ -187,7 +185,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
 			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
-			const renderNarrow = (width: number, pwd: string, branch: string | null): string[] => {
+			const renderLines = (width: number, pwd: string, branch: string | null, full: boolean): string[] => {
 				let cost = 0;
 				let hit: number | null = null;
 				for (const e of ctx.sessionManager.getBranch()) {
@@ -204,7 +202,7 @@ export default function (pi: ExtensionAPI) {
 				const ceiling = parseCeiling(footerData.getExtensionStatuses().get("ceiling"));
 				const contextLimit = ceiling?.limit ?? usage?.contextWindow ?? (ctx.model as ModelWithMeta | undefined)?.contextWindow ?? 0;
 				const contextTokens = typeof usage?.tokens === "number" ? usage.tokens : (ceiling?.used ?? null);
-				return narrowLines(
+				return footerLines(
 					{
 						pwd,
 						branch,
@@ -216,6 +214,20 @@ export default function (pi: ExtensionAPI) {
 						model: ctx.model?.id,
 						provider: ctx.model?.provider,
 						copilotQuota: snapshotCache && !snapshotCache.unlimited ? { used: snapshotCache.used, total: snapshotCache.total } : undefined,
+						copilotText: snapshotCache?.text,
+						copilotNote:
+							lastError === "no token"
+								? "Copilot ⛔ (add token: security add-generic-password -s github-copilot-token -a $USER -w)"
+								: lastError
+									? `Copilot: ${lastError}`
+									: isCopilotModel(ctx)
+										? "Copilot …"
+										: undefined,
+						otherStatuses: [...footerData.getExtensionStatuses().entries()]
+							.filter(([key]) => key !== "ceiling" && key !== "gateway-budget")
+							.sort(([a], [b]) => a.localeCompare(b))
+							.map(([, text]) => text.replace(/[\r\n\t]+/g, " ").trim())
+							.filter(Boolean),
 						budgetStatus: footerData.getExtensionStatuses().get("gateway-budget"),
 						thinking: (ctx.model as ModelWithMeta | undefined)?.reasoning ? pi.getThinkingLevel() : undefined,
 						fmtTokens,
@@ -224,6 +236,7 @@ export default function (pi: ExtensionAPI) {
 						measure: visibleWidth,
 					},
 					width,
+					full,
 				);
 			};
 			return {
@@ -233,124 +246,10 @@ export default function (pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					// Line 1: pwd + git branch
 					const home = process.env.HOME || process.env.USERPROFILE || "";
 					let pwd = ctx.cwd;
 					if (home && pwd.startsWith(home)) pwd = "~" + pwd.slice(home.length);
-					const branch = footerData.getGitBranch();
-					if (width < narrowThreshold()) return renderNarrow(width, pwd, branch);
-					// pi-tui aborts the whole process when a rendered line is wider than
-					// the terminal (pi-tui-crash.log: "Line N visible width"); a 22-column
-					// pane from a phone client took down a subagent and then the
-					// orchestrator this way. Keep the tail of the path, it carries the
-					// repo and branch.
-					let pwdText = branch ? `${pwd} (${branch})` : pwd;
-					if (visibleWidth(pwdText) > width) {
-						pwdText = width > 1 ? `…${pwdText.slice(pwdText.length - (width - 1))}` : "…".slice(0, width);
-					}
-					const pwdLine = theme.fg("dim", pwdText);
-
-					// Line 2: usage stats (left) + credits + provider/model (right)
-					let input = 0,
-						output = 0,
-						cacheRead = 0,
-						cacheWrite = 0,
-						cost = 0;
-					let latestPromptTokens = 0;
-					let latestCacheRead = 0;
-					for (const e of ctx.sessionManager.getBranch()) {
-						if (e.type === "message" && e.message.role === "assistant") {
-							const u = e.message.usage;
-							input += u.input;
-							output += u.output;
-							cacheRead += u.cacheRead ?? 0;
-							cacheWrite += u.cacheWrite ?? 0;
-							cost += u.cost?.total ?? 0;
-							latestPromptTokens = u.input + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
-							latestCacheRead = u.cacheRead ?? 0;
-						}
-					}
-					const statsParts: string[] = [];
-					if (input) statsParts.push(`↑${fmtTokens(input)}`);
-					if (output) statsParts.push(`↓${fmtTokens(output)}`);
-					if (cacheRead) statsParts.push(`R${fmtTokens(cacheRead)}`);
-					if (cacheWrite) statsParts.push(`W${fmtTokens(cacheWrite)}`);
-					if ((cacheRead > 0 || cacheWrite > 0) && latestPromptTokens > 0) {
-						statsParts.push(`CH${((latestCacheRead / latestPromptTokens) * 100).toFixed(1)}%`);
-					}
-					if (cost) statsParts.push(`$${cost.toFixed(3)}`);
-
-					// Context usage %
-					const cu = ctx.getContextUsage?.();
-					const model = ctx.model as ModelWithMeta | undefined;
-					const contextWindow = cu?.contextWindow ?? model?.contextWindow ?? 0;
-					const pct = cu?.percent;
-					if (contextWindow > 0) {
-						const pctStr = pct !== null && pct !== undefined ? pct.toFixed(1) : "?";
-						const disp = `${pctStr}%/${fmtTokens(contextWindow)}`;
-						if (typeof pct === "number" && pct > 90) statsParts.push(theme.fg("error", disp));
-						else if (typeof pct === "number" && pct > 70) statsParts.push(theme.fg("warning", disp));
-						else statsParts.push(disp);
-					}
-
-					const statsLeftRaw = statsParts.join(" ");
-					const statsLeft = theme.fg("dim", statsLeftRaw);
-
-					// Credits chunk (orange). Only when Copilot model AND we have data.
-					let creditsChunk = "";
-					if (isCopilotModel(ctx)) {
-						if (snapshotCache) {
-							creditsChunk = `${ORANGE_OPEN}${snapshotCache.text}${RESET}`;
-						} else if (lastError === "no token") {
-							creditsChunk = theme.fg(
-								"dim",
-								"Copilot ⛔ (add token: security add-generic-password -s github-copilot-token -a $USER -w)",
-							);
-						} else if (lastError) {
-							creditsChunk = theme.fg("dim", `Copilot: ${lastError}`);
-						} else {
-							creditsChunk = theme.fg("dim", "Copilot …");
-						}
-					}
-
-					// Right side: (provider) model • thinking
-					const modelName = model?.id ?? "no-model";
-					const provider = model?.provider ?? "";
-					const level = model?.reasoning ? pi.getThinkingLevel() : undefined;
-					const modelText = level ? `${modelName} • ${level}` : modelName;
-					const rightSide = theme.fg("dim", provider ? `(${provider}) ${modelText}` : modelText);
-
-					// Compose line 2 with credits between stats and right side.
-					const rightBlock = creditsChunk
-						? `${creditsChunk}  ${rightSide}`
-						: rightSide;
-					const leftW = visibleWidth(statsLeft);
-					const rightW = visibleWidth(rightBlock);
-					const minPad = 2;
-					let statsLine: string;
-					if (leftW + minPad + rightW <= width) {
-						const pad = " ".repeat(width - leftW - rightW);
-						statsLine = statsLeft + pad + rightBlock;
-					} else {
-						// Overflow: fall back to just stats + right, drop credits.
-						const rightOnlyW = visibleWidth(rightSide);
-						if (leftW + minPad + rightOnlyW <= width) {
-							const pad = " ".repeat(width - leftW - rightOnlyW);
-							statsLine = statsLeft + pad + rightSide;
-						} else {
-							statsLine = truncateToWidth(statsLeft, width, theme.fg("dim", "…"));
-						}
-					}
-
-					// Line 3: other extensions' statuses, left-aligned.
-					const otherStatuses = Array.from(footerData.getExtensionStatuses().entries())
-						.sort(([a], [b]) => a.localeCompare(b))
-						.map(([, t]) => t);
-					const line3 = otherStatuses.length
-						? truncateToWidth(otherStatuses.join(" "), width, theme.fg("dim", "…"))
-						: null;
-
-					return line3 ? [pwdLine, statsLine, line3] : [pwdLine, statsLine];
+					return renderLines(width, pwd, footerData.getGitBranch(), width >= narrowThreshold());
 				},
 			};
 		});

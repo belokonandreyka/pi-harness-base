@@ -3,6 +3,7 @@ import {
 	BAR_DOTS,
 	NARROW_FOOTER_COLS,
 	agentRole,
+	footerLines,
 	barDots,
 	parseWeekly,
 	providerLetter,
@@ -113,7 +114,7 @@ describe("narrow footer", () => {
 		expect(quotaText(1_500, 3_000)).toBe("1.5/3k");
 		expect(quotaText(0, 60_000)).toBe("0/60k");
 		expect(quotaText(120, 300)).toBe("120/300");
-		expect(quotaColor(22_000, 60_000)).toBe("muted");
+		expect(quotaColor(22_000, 60_000)).toBe("text");
 		expect(quotaColor(50_000, 60_000)).toBe("yellow");
 		expect(quotaColor(58_000, 60_000)).toBe("red");
 	});
@@ -131,6 +132,8 @@ describe("narrow footer", () => {
 		expect(parseWeekly(undefined)).toBeNull();
 		const near = narrowLines({ ...base, provider: "vitu-gateway", budgetStatus: "gw wk $412/500 ⚠ · mo $894", fg: (t: string, s: string) => `<${t}>${s}</>`, measure: (s: string) => [...s.replace(/<\/?[a-zA-Z]*>/g, "")].length, truncate: (s: string) => s }, 60);
 		expect(near[2]).toContain("<yellow>wk $412</>");
+		const ok = narrowLines({ ...base, provider: "vitu-gateway", budgetStatus: "gw wk $26.7/500 · mo $894", fg: (t: string, s: string) => `<${t}>${s}</>`, measure: (s: string) => [...s.replace(/<\/?[a-zA-Z]*>/g, "")].length, truncate: (s: string) => s }, 60);
+		expect(ok[2]).toContain("<text>wk $26.7</>");
 	});;
 
 	test("short model names and three-letter thinking levels", () => {
@@ -171,5 +174,38 @@ describe("narrow footer", () => {
 		expect(agentRole({})).toBe("orchestrator");
 		expect(narrowThreshold({})).toBe(NARROW_FOOTER_COLS);
 		expect(narrowThreshold({ PI_FOOTER_NARROW_COLS: "0" })).toBe(0);
+	});
+});
+
+describe("full footer (wide terminals)", () => {
+	const wide = {
+		...base,
+		pwd: "~/work/portal/site/Scripts",
+		branch: "vitest-migration-2",
+		model: "claude-opus-5-5",
+		thinking: "medium",
+		provider: "vitu-gateway",
+		budgetStatus: "gw wk $26.7/500 · mo $894/2000",
+		otherStatuses: ["RapidTiger2 (orchestrator) (2 peers) focus: local ●1", "MCP: 5 servers enabled"],
+	};
+
+	test("same three lines, nothing shortened, other statuses on line 4", () => {
+		const lines = footerLines(wide, 140, true);
+		expect(lines[0]).toBe("~/work/portal/site/Scripts (vitest-migration-2)" + " ".repeat(140 - 47 - 12) + "orchestrator");
+		expect(lines[1].startsWith("●●●●◐○○○○○ 44% 70k/160k ")).toBe(true);
+		expect(lines[1].endsWith("CH96.2%")).toBe(true);
+		expect(lines[2]).toBe("$1.503 · gw wk $26.7/500 · mo $894/2000" + " ".repeat(140 - 39 - 39) + "(vitu-gateway) claude-opus-5-5 · medium");
+		expect(lines[3]).toBe("RapidTiger2 (orchestrator) (2 peers) focus: local ●1 MCP: 5 servers enabled");
+		for (const l of lines) expect(visibleWidth(l)).toBeLessThanOrEqual(140);
+	});
+
+	test("on Copilot the credits line is the snapshot's own text", () => {
+		const cp = { ...wide, provider: "github-copilot", model: "claude-opus-5.5", cost: 1.0, copilotQuota: { used: 22_000, total: 60_000 }, copilotText: "22k/60k credits · 12d" };
+		expect(footerLines(cp, 140, true)[2].startsWith("100 cr · 22k/60k credits · 12d ")).toBe(true);
+		expect(footerLines({ ...cp, copilotQuota: undefined, copilotText: undefined, copilotNote: "Copilot …" }, 140, true)[2].startsWith("100 cr · Copilot … ")).toBe(true);
+	});
+
+	test("narrow mode never shows line 4", () => {
+		expect(footerLines(wide, 50, false)).toHaveLength(3);
 	});
 });
