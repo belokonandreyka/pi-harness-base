@@ -224,7 +224,8 @@ export default function (pi: ExtensionAPI) {
 										? "Copilot …"
 										: undefined,
 						otherStatuses: [...footerData.getExtensionStatuses().entries()]
-							.filter(([key]) => key !== "ceiling" && key !== "gateway-budget")
+							// Already drawn above: the context bar, the gateway budget, the session credits.
+							.filter(([key]) => key !== "ceiling" && key !== "gateway-budget" && key !== "copilot-credits")
 							.sort(([a], [b]) => a.localeCompare(b))
 							.map(([, text]) => text.replace(/[\r\n\t]+/g, " ").trim())
 							.filter(Boolean),

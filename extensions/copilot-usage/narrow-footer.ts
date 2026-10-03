@@ -5,7 +5,7 @@
  * percentage that repeats the ceiling, peer and budget statuses.
  *
  *   line 1  ../site/Scripts (branch)                       orchestrator
- *   line 2  ●●●●◐○○○○○ 44% 70k/160k                          CH96.2%
+ *   line 2  ●●●●◑○○○○○ 44% 70k/160k                          CH96.2%
  *   line 3  $1.503 · wk $26.7                  (g) opus-5.5 · mid
  *
  * Line 2 is the context against the compaction limit (the context-ceiling
@@ -104,14 +104,22 @@ export function parseCeiling(status: string | undefined): { used: number | null;
 	return { used: m[1] === undefined ? null : Number(m[1]) * 1000, limit: Number(m[2]) * 1000 };
 }
 
+/** Session credits: cents while small, whole credits once the decimals stop mattering. */
+export function creditsText(credits: number): string {
+	if (credits < 10) return credits.toFixed(2);
+	if (credits < 100) return credits.toFixed(1);
+	return String(Math.round(credits));
+}
+
 export const BAR_DOTS = 10;
 
 /**
- * The dots of the context bar, in quarter steps: ○ ◔ ◐ ◕ ●. JetBrains Mono has
- * no ◐; the patched "JetBrains Mono Herdr" (scripts/patch-terminal-font.py)
- * adds it from the font's own ring, so it matches ○ ● in Ghostty and, once the
- * same .ttf is imported, in Moshi. Without the patched font ◐ comes from a
- * fallback font and looks larger.
+ * The dots of the context bar, in quarter steps: ○ ◔ ◑ ◕ ●. JetBrains Mono has
+ * no half circles; the patched "JetBrains Mono Herdr"
+ * (scripts/patch-terminal-font.py) adds ◐ ◑ from the font's own ring, so they
+ * match ○ ● in Ghostty and, once the same .ttf is imported, in Moshi. Without
+ * the patched font, or in a terminal started before it was installed (Ghostty
+ * loads fonts once), the half circle comes from a fallback font and sits off size.
  */
 export function barDots(fill: number, dots = BAR_DOTS): { filled: string; empty: string } {
 	const x = Math.min(1, Math.max(0, fill)) * dots;
@@ -120,7 +128,7 @@ export function barDots(fill: number, dots = BAR_DOTS): { filled: string; empty:
 	let partial = "";
 	if (frac >= 0.875) full += 1;
 	else if (frac >= 0.625) partial = "◕";
-	else if (frac >= 0.375) partial = "◐";
+	else if (frac >= 0.375) partial = "◑";
 	else if (frac >= 0.125) partial = "◔";
 	full = Math.min(full, dots);
 	const used = full + (partial ? 1 : 0);
@@ -250,7 +258,7 @@ export function footerLines(v: NarrowInput, width: number, full: boolean): strin
 	const money: string[] = [];
 	const letter = providerLetter(v.provider);
 	if (letter === "c") {
-		money.push(v.fg("text", `${Math.round(v.cost * 100)} cr`));
+		money.push(v.fg("text", `${creditsText(v.cost * 100)} cr`));
 		const q = v.copilotQuota;
 		if (q && q.total > 0) {
 			money.push(v.fg(quotaColor(q.used, q.total), full && v.copilotText ? v.copilotText : quotaText(q.used, q.total)));
