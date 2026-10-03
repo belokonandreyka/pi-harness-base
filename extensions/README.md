@@ -382,6 +382,24 @@ from Keychain item `github-copilot-token`. Other extensions' statuses render
 on a third footer line. `/copilot-refresh` re-polls. Enabled in the
 orchestrator (auto-discovered via the symlink) and the subagent profile.
 
+## copilot-pace
+
+Tells the coordinator how fast the Copilot credits are going, because it picks
+the model for every subagent but runs on another provider and never sees the
+quota. Reads the same endpoint and Keychain token as copilot-usage (shared in
+`copilot-usage/quota.ts`), keeps the day's baseline in
+`<agentDir>/state/copilot-pace.json` and grades the pace: `ok` (the average
+lasts until the reset), `high-today` (today above twice the daily budget),
+`over` (at the average the quota is gone before the reset), `critical` (gone
+within 3 days or under 5 % left). The coordinator gets a note at the start of a
+turn when the level changes (and once a day while it is not ok), and one
+`[copilot-pace: <level>]` line at the end of every `subagent` result while it
+is not ok; both sit after the cached prefix. Config `copilot-pace.json`
+(`enabled`, `refreshMinutes` default 15, `rules` per level to name the
+profile's own subagent types); `/copilot-pace` refreshes and shows the numbers.
+Not loaded in subagents. "Today" starts from the first reading of the day on a
+fresh state file, so the first day under-counts.
+
 ## gateway-budget
 
 Week and month spend on the AI gateway against the caps
