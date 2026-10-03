@@ -5,8 +5,13 @@ Terminal.app has one font per profile and no fallback setting, so the
 qintmb.herdr-icon-agent-ui plugin's private-use glyphs (U+E1A0-U+E1B0) render
 as boxes there. This script copies them into a JetBrains Mono Regular, maps U+2B24
 (the plugin's LED glyph, which JetBrains Mono lacks and macOS otherwise draws
-too wide, swallowing the space after it) to the cell-sized ● outline, and installs the result as one family you pick in
-Terminal > Settings > Profiles > Text. Ghostty can use the same font.
+too wide, swallowing the space after it) to the cell-sized ● outline, adds the
+half circles ◐ ◑ (U+25D0/25D1, which JetBrains Mono lacks: the pi footer's
+context bar uses them, and a fallback font draws them larger than ○ ●), and
+installs the result as one family you pick in Terminal > Settings > Profiles >
+Text. Ghostty can use the same font. Running it on an already patched font
+(`--jbm ~/Library/Fonts/JetBrainsMonoHerdr-Regular.ttf`) only adds what is
+missing.
 
   scripts/patch-terminal-font.py                # download JetBrains Mono, write ~/Library/Fonts
   scripts/patch-terminal-font.py --jbm path/to/JetBrainsMono-Regular.ttf --out ./x.ttf
@@ -30,6 +35,46 @@ HOME = os.path.expanduser("~")
 ICON_GLOB = os.path.join(HOME, ".config/herdr/plugins/*/qintmb.herdr-icon-agent-ui*/dist/HerdrAgentIconsMax-Regular.ttf")
 JBM_RELEASES = "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/latest"
 LED, LED_SOURCE = 0x2B24, 0x25CF   # ⬤ is drawn with the cell-sized ● outline
+RING = 0x25CB                      # ○: outer contour, then the hole
+HALF_LEFT, HALF_RIGHT = 0x25D0, 0x25D1   # ◐ left half black, ◑ right half black
+
+
+def half_circle(base, filled_left: bool):
+    """◐ / ◑ in JetBrains Mono's own construction: the outer contour of ○ plus
+    a hole that is the other half of the inner disk (◔ is built the same way,
+    with a three-quarter hole), so size and stroke match ○ ● ◔ ◕ exactly."""
+    from fontTools.pens.cu2quPen import Cu2QuPen
+    from fontTools.pens.recordingPen import RecordingPen
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+
+    glyf, cmap = base["glyf"], base.getBestCmap()
+    ring = glyf[cmap[RING]]
+    rec = RecordingPen()
+    ring.draw(rec, glyf)
+    first_close = next(i for i, (op, _) in enumerate(rec.value) if op in ("closePath", "endPath"))
+    outer = rec.value[: first_close + 1]
+    coords, ends, _ = ring.getCoordinates(glyf)
+    inner = coords[ends[0] + 1 : ends[1] + 1]
+    xs, ys = [p[0] for p in inner], [p[1] for p in inner]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    r = (max(xs) - min(xs)) / 2
+    k = 0.5523 * r  # cubic quarter-circle handle
+
+    pen = TTGlyphPen(None)
+    for op, args in outer:
+        getattr(pen, op)(*args)
+    q = Cu2QuPen(pen, max_err=0.5)
+    # The hole runs counter-clockwise like ○'s; the half it covers stays white.
+    if filled_left:  # hole = right half: bottom → right → top, then straight down
+        q.moveTo((cx, cy - r))
+        q.curveTo((cx + k, cy - r), (cx + r, cy - k), (cx + r, cy))
+        q.curveTo((cx + r, cy + k), (cx + k, cy + r), (cx, cy + r))
+    else:  # hole = left half: top → left → bottom, then straight up
+        q.moveTo((cx, cy + r))
+        q.curveTo((cx - k, cy + r), (cx - r, cy + k), (cx - r, cy))
+        q.curveTo((cx - r, cy - k), (cx - k, cy - r), (cx, cy - r))
+    q.closePath()
+    return pen.glyph(), base["hmtx"][cmap[RING]]
 
 
 def ensure_fonttools(tmp: str):
@@ -90,10 +135,17 @@ def main() -> int:
             added.append(cp)
 
         for cp, gname in sorted(icons.getBestCmap().items()):
+            if f"herdr.{cp:04X}" in glyf.glyphs:
+                continue  # an already patched font: only add what is missing
             if icons["glyf"][gname].isComposite():
                 print(f"skipping composite glyph {gname}", file=sys.stderr)
                 continue
             add(f"herdr.{cp:04X}", cp, icons["glyf"][gname], icons["hmtx"][gname])
+        if RING in base_cmap:
+            for cp, left in ((HALF_LEFT, True), (HALF_RIGHT, False)):
+                if cp not in base_cmap:
+                    glyph, metrics = half_circle(base, left)
+                    add(f"uni{cp:04X}", cp, glyph, metrics)
         if LED not in base_cmap and LED_SOURCE in base_cmap:
             for t in unicode_tables:
                 t.cmap[LED] = base_cmap[LED_SOURCE]
