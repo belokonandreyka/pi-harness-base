@@ -13,6 +13,7 @@
  *   # (paste a fine-grained GitHub PAT with no repo scopes — auth-only)
  */
 
+import { agentRole, colorize, narrowLines, narrowThreshold, parseCeiling } from "./narrow-footer.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
@@ -44,6 +45,9 @@ interface Snapshot {
 	resetDays: number | undefined;
 	pctUsed: number;
 	unlimited: boolean;
+	/** Credits used this period and the period's entitlement (0/0 when unlimited). */
+	used: number;
+	total: number;
 }
 
 function fmtCredits(n: number): string {
@@ -84,7 +88,7 @@ function toSnapshot(resp: CopilotUserResponse): Snapshot | undefined {
 	if (!snap) return undefined;
 	const days = daysUntilReset(resp.quota_reset_date_utc ?? resp.quota_reset_date);
 	if (snap.unlimited) {
-		return { text: "Copilot ∞", resetDays: days, pctUsed: 0, unlimited: true };
+		return { text: "Copilot ∞", resetDays: days, pctUsed: 0, unlimited: true, used: 0, total: 0 };
 	}
 	const total = snap.entitlement ?? 0;
 	const remaining = snap.remaining ?? total;
@@ -92,7 +96,7 @@ function toSnapshot(resp: CopilotUserResponse): Snapshot | undefined {
 	const pctUsed = total > 0 ? (used / total) * 100 : 0;
 	const parts = [`${fmtCredits(used)}/${fmtCredits(total)} credits`];
 	if (days !== undefined) parts.push(`${days}d`);
-	return { text: parts.join(" · "), resetDays: days, pctUsed, unlimited: false };
+	return { text: parts.join(" · "), resetDays: days, pctUsed, unlimited: false, used, total };
 }
 
 async function readTokenFromKeychain(pi: ExtensionAPI, signal: AbortSignal): Promise<string | undefined> {
@@ -183,6 +187,45 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
 			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
+			const renderNarrow = (width: number, pwd: string, branch: string | null): string[] => {
+				let cost = 0;
+				let hit: number | null = null;
+				for (const e of ctx.sessionManager.getBranch()) {
+					if (e.type === "message" && e.message.role === "assistant") {
+						const u = e.message.usage;
+						cost += u.cost?.total ?? 0;
+						const prompt = u.input + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
+						hit = prompt > 0 ? ((u.cacheRead ?? 0) / prompt) * 100 : hit;
+					}
+				}
+				// Measure against the compaction limit: the context-ceiling status
+				// when that extension runs, the model's window otherwise.
+				const usage = ctx.getContextUsage?.();
+				const ceiling = parseCeiling(footerData.getExtensionStatuses().get("ceiling"));
+				const contextLimit = ceiling?.limit ?? usage?.contextWindow ?? (ctx.model as ModelWithMeta | undefined)?.contextWindow ?? 0;
+				const contextTokens = typeof usage?.tokens === "number" ? usage.tokens : (ceiling?.used ?? null);
+				return narrowLines(
+					{
+						pwd,
+						branch,
+						contextTokens,
+						contextLimit,
+						cacheHitPercent: hit,
+						cost,
+						role: agentRole(),
+						model: ctx.model?.id,
+						provider: ctx.model?.provider,
+						copilotQuota: snapshotCache && !snapshotCache.unlimited ? { used: snapshotCache.used, total: snapshotCache.total } : undefined,
+						budgetStatus: footerData.getExtensionStatuses().get("gateway-budget"),
+						thinking: (ctx.model as ModelWithMeta | undefined)?.reasoning ? pi.getThinkingLevel() : undefined,
+						fmtTokens,
+						fg: colorize((token, t) => theme.fg(token as never, t)),
+						truncate: truncateToWidth,
+						measure: visibleWidth,
+					},
+					width,
+				);
+			};
 			return {
 				dispose: () => {
 					unsubBranch();
@@ -195,6 +238,7 @@ export default function (pi: ExtensionAPI) {
 					let pwd = ctx.cwd;
 					if (home && pwd.startsWith(home)) pwd = "~" + pwd.slice(home.length);
 					const branch = footerData.getGitBranch();
+					if (width < narrowThreshold()) return renderNarrow(width, pwd, branch);
 					// pi-tui aborts the whole process when a rendered line is wider than
 					// the terminal (pi-tui-crash.log: "Line N visible width"); a 22-column
 					// pane from a phone client took down a subagent and then the
@@ -272,7 +316,9 @@ export default function (pi: ExtensionAPI) {
 					// Right side: (provider) model • thinking
 					const modelName = model?.id ?? "no-model";
 					const provider = model?.provider ?? "";
-					const rightSide = theme.fg("dim", provider ? `(${provider}) ${modelName}` : modelName);
+					const level = model?.reasoning ? pi.getThinkingLevel() : undefined;
+					const modelText = level ? `${modelName} • ${level}` : modelName;
+					const rightSide = theme.fg("dim", provider ? `(${provider}) ${modelText}` : modelText);
 
 					// Compose line 2 with credits between stats and right side.
 					const rightBlock = creditsChunk
