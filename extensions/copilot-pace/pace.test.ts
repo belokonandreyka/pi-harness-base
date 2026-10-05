@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import copilotPace, { CUSTOM_TYPE } from "./index.ts";
-import { computePace, DAY_MS, paceLine, paceNote, periodStart, recordReading } from "./pace.ts";
+import { completedDates, computePace, dailyCredits, DAY_MS, paceLine, paceNote, periodStart, recordReading } from "./pace.ts";
 
 const RESET = "2026-11-01T00:00:00Z";
 const at = (iso: string) => Date.parse(iso);
@@ -61,6 +61,65 @@ describe("recordReading", () => {
 		const old = { last: { at: at("2026-09-30T20:00:00Z"), used: 59_000, resetIso: "2026-10-01T00:00:00Z" } };
 		expect(recordReading(old, 300, RESET, at("2026-10-01T09:00:00Z")).dayStart).toEqual({ date: "2026-10-01", at: periodStart(at(RESET)), used: 0 });
 		expect(recordReading({}, 9_000, RESET, at("2026-10-03T09:00:00Z")).dayStart).toEqual({ date: "2026-10-03", at: at("2026-10-03T09:00:00Z"), used: 9_000 });
+	});
+});
+
+describe("spike days", () => {
+	const october = (extra: Record<string, number> = {}) =>
+		new Map(Object.entries({ "2026-10-01": 15_415, "2026-10-02": 6_792, "2026-10-03": 647, "2026-10-05": 233, ...extra }));
+	const now = at("2026-10-05T12:00:00Z");
+
+	test("2026-10-05: the two migration days are one-offs, the other days set the pace", () => {
+		const p = computePace(23_285, 60_000, RESET, now, undefined, { days: october() })!;
+		expect(p.basis).toBe("without-spikes");
+		expect(p.spikes).toEqual([
+			{ date: "2026-10-01", credits: 15_415 },
+			{ date: "2026-10-02", credits: 6_792 },
+		]);
+		expect(p.typicalPerDay).toBe((647 + 0) / 2);
+		expect(p.today).toBe(233);
+		expect(p.level).toBe("ok");
+		expect(paceLine(p, now)).toContain("without 2 spike days (10-01 15k, 10-02 6.8k) treated as one-off: 324/day");
+		// Without daily data the same numbers read as over pace.
+		expect(computePace(23_285, 60_000, RESET, now)!.level).toBe("over");
+	});
+
+	test("a third spike day makes the average the pace", () => {
+		const p = computePace(28_285, 60_000, RESET, now, undefined, { days: october({ "2026-10-04": 5_000 }) })!;
+		expect(p.basis).toBe("spike-pattern");
+		expect(p.typicalPerDay).toBe(p.avgPerDay);
+		expect(p.level).toBe("over");
+		expect(paceLine(p, now)).toContain("3 spike days this period (10-01 15k, 10-02 6.8k, 10-04 5.0k) are a pattern");
+	});
+
+	test("a spike in progress still shows as high-today", () => {
+		const p = computePace(28_285, 60_000, RESET, now, undefined, { days: october({ "2026-10-05": 5_233 }) })!;
+		expect(p.basis).toBe("without-spikes");
+		expect(p.level).toBe("high-today");
+	});
+
+	test("maxSpikeDays 0 turns the exclusion off", () => {
+		expect(computePace(23_285, 60_000, RESET, now, undefined, { days: october(), maxSpikeDays: 0 })!.basis).toBe("spike-pattern");
+	});
+
+	test("dailyCredits sums Copilot request rows per local day", () => {
+		const rows = [
+			{ ts: "2026-09-30T23:00:00Z", kind: "request", provider: "github-copilot", cost: 1 },
+			{ ts: "2026-10-01T08:00:00Z", kind: "request", provider: "github-copilot", cost: 1.5 },
+			{ ts: "2026-10-01T09:00:00Z", kind: "warm", provider: "github-copilot", cost: 9 },
+			{ ts: "2026-10-01T10:00:00Z", kind: "request", provider: "vitu-gateway", cost: 9 },
+			{ ts: "2026-10-02T10:00:00Z", kind: "request", provider: "github-copilot", cost: 0.25 },
+		].map((r) => JSON.stringify(r));
+		const days = dailyCredits([...rows, "not json", ""], at("2026-10-01T00:00:00Z"), 100);
+		expect([...days]).toEqual([
+			["2026-10-01", 150],
+			["2026-10-02", 25],
+		]);
+	});
+
+	test("completedDates runs from the period's first day to yesterday", () => {
+		expect(completedDates(at("2026-10-01T00:00:00Z"), now)).toEqual(["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+		expect(completedDates(at("2026-10-01T00:00:00Z"), at("2026-10-01T05:00:00Z"))).toEqual([]);
 	});
 });
 

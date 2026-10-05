@@ -1,6 +1,10 @@
 /**
  * Copilot credit pace: how fast this period's credits are going against what
  * keeps them until the reset. Pure functions; index.ts fetches and injects.
+ *
+ * The projection runs on the typical day: one or two spike days in a period
+ * (over twice the even daily share) are one-offs and left out of the rate,
+ * though their credits stay spent; a third spike makes the average the rate.
  */
 
 export const DAY_MS = 86_400_000;
@@ -32,9 +36,24 @@ export interface Pace {
 	avgPerDay: number;
 	today: number;
 	todaySince: number;
-	/** Days until the quota is gone at the average pace; Infinity when nothing is spent. */
+	/** The daily rate the projection uses: the average, or the average without spike days. */
+	typicalPerDay: number;
+	/** Completed days of this period over the spike threshold, oldest first. */
+	spikes: Array<{ date: string; credits: number }>;
+	/** "average": no spikes or no daily data; "without-spikes": 1..maxSpikeDays excluded; "spike-pattern": too many to exclude. */
+	basis: "average" | "without-spikes" | "spike-pattern";
+	/** Days until the quota is gone at the typical pace; Infinity when nothing is spent. */
 	runOutDays: number;
 	level: PaceLevel;
+}
+
+export interface PaceOptions {
+	/** Credits per local calendar day of this period, from request telemetry. */
+	days?: Map<string, number>;
+	/** A completed day over spikeFactor × (total / period days) is a spike. */
+	spikeFactor?: number;
+	/** Up to this many spike days in a period are treated as one-offs and left out of the rate. */
+	maxSpikeDays?: number;
 }
 
 export function localDate(ms: number): string {
@@ -69,7 +88,47 @@ export function recordReading(state: PaceState, used: number, resetIso: string, 
 	return { last: { at: now, used, resetIso }, dayStart };
 }
 
-export function computePace(used: number, total: number, resetIso: string, now: number, dayStart?: DayStart): Pace | undefined {
+/** Calendar dates from the period's first local day up to yesterday. */
+export function completedDates(startMs: number, now: number): string[] {
+	const dates: string[] = [];
+	const today = localDate(now);
+	const d = new Date(startMs);
+	d.setHours(12, 0, 0, 0);
+	for (let date = localDate(d.getTime()); date < today; d.setDate(d.getDate() + 1), date = localDate(d.getTime())) dates.push(date);
+	return dates;
+}
+
+/**
+ * Credits per local day from cache-telemetry rows (`kind: "request"`,
+ * `provider: "github-copilot"`, `cost` in list-price dollars).
+ */
+export function dailyCredits(lines: Iterable<string>, sinceMs: number, creditsPerDollar: number): Map<string, number> {
+	const days = new Map<string, number>();
+	for (const line of lines) {
+		if (!line.includes('"github-copilot"')) continue;
+		let row: any;
+		try {
+			row = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (row?.kind !== "request" || row?.provider !== "github-copilot" || typeof row?.cost !== "number") continue;
+		const ts = Date.parse(row.ts);
+		if (Number.isNaN(ts) || ts < sinceMs) continue;
+		const date = localDate(ts);
+		days.set(date, (days.get(date) ?? 0) + row.cost * creditsPerDollar);
+	}
+	return days;
+}
+
+export function computePace(
+	used: number,
+	total: number,
+	resetIso: string,
+	now: number,
+	dayStart?: DayStart,
+	options: PaceOptions = {},
+): Pace | undefined {
 	const reset = Date.parse(resetIso);
 	if (!(total > 0) || Number.isNaN(reset)) return undefined;
 	const remaining = Math.max(0, total - used);
@@ -78,8 +137,30 @@ export function computePace(used: number, total: number, resetIso: string, now: 
 	const elapsedDays = Math.max((now - periodStart(reset)) / DAY_MS, 1);
 	const budgetPerDay = remaining / daysLeft;
 	const avgPerDay = used / elapsedDays;
-	const today = dayStart && dayStart.date === localDate(now) ? Math.max(0, used - dayStart.used) : 0;
-	const runOutDays = avgPerDay > 0 ? remaining / avgPerDay : Number.POSITIVE_INFINITY;
+	const todayDate = localDate(now);
+	const fromReadings = dayStart && dayStart.date === todayDate ? Math.max(0, used - dayStart.used) : 0;
+	const today = Math.max(fromReadings, options.days?.get(todayDate) ?? 0);
+
+	// One or two heavy days (a migration, an eval run) say little about the
+	// rest of the month: their credits are already out of `remaining`, and the
+	// projection runs on the days around them. More spikes than that are the pace.
+	let typicalPerDay = avgPerDay;
+	let basis: Pace["basis"] = "average";
+	let spikes: Pace["spikes"] = [];
+	if (options.days) {
+		const start = periodStart(reset);
+		const periodDays = (reset - start) / DAY_MS;
+		const threshold = (options.spikeFactor ?? 2) * (total / periodDays);
+		const completed = completedDates(start, now).map((date) => ({ date, credits: options.days!.get(date) ?? 0 }));
+		spikes = completed.filter((d) => d.credits > threshold);
+		const normal = completed.filter((d) => d.credits <= threshold);
+		if (spikes.length > (options.maxSpikeDays ?? 2)) basis = "spike-pattern";
+		else if (spikes.length > 0 && normal.length > 0) {
+			basis = "without-spikes";
+			typicalPerDay = normal.reduce((sum, d) => sum + d.credits, 0) / normal.length;
+		}
+	}
+	const runOutDays = typicalPerDay > 0 ? remaining / typicalPerDay : Number.POSITIVE_INFINITY;
 	let level: PaceLevel = "ok";
 	if (remaining <= total * 0.05 || runOutDays < 3) level = "critical";
 	else if (runOutDays < daysLeft) level = "over";
@@ -93,7 +174,11 @@ export function computePace(used: number, total: number, resetIso: string, now: 
 		budgetPerDay,
 		avgPerDay,
 		today,
-		todaySince: dayStart?.at ?? now,
+		// Telemetry counts from midnight; a reading baseline from the last reading before it.
+		todaySince: options.days ? new Date(now).setHours(0, 0, 0, 0) : (dayStart?.at ?? now),
+		typicalPerDay,
+		spikes,
+		basis,
 		runOutDays,
 		level,
 	};
@@ -119,7 +204,13 @@ export function paceLine(p: Pace, now: number): string {
 		`${fmtCredits(p.budgetPerDay)}/day lasts until the reset`,
 		`average so far ${fmtCredits(p.avgPerDay)}/day, today ${fmtCredits(p.today)} (${since})`,
 	];
-	if (p.level === "over" || p.level === "critical") parts.push(`at the average pace the quota is gone in ~${Math.max(0, Math.floor(p.runOutDays))}d`);
+	const spikeList = p.spikes.map((d) => `${d.date.slice(5)} ${fmtCredits(d.credits)}`).join(", ");
+	if (p.basis === "without-spikes") {
+		parts.push(`without ${p.spikes.length} spike day${p.spikes.length > 1 ? "s" : ""} (${spikeList}) treated as one-off: ${fmtCredits(p.typicalPerDay)}/day`);
+	} else if (p.basis === "spike-pattern") {
+		parts.push(`${p.spikes.length} spike days this period (${spikeList}) are a pattern, so the average stands`);
+	}
+	if (p.level === "over" || p.level === "critical") parts.push(`at this pace the quota is gone in ~${Math.max(0, Math.floor(p.runOutDays))}d`);
 	return `${parts.join("; ")}.`;
 }
 

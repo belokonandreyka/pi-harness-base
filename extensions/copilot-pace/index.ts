@@ -22,7 +22,11 @@
  *   { "enabled": true, "refreshMinutes": 15,
  *     "rules": { "high-today": "...", "over": "...", "critical": "..." } }
  * `rules` replaces the generic routing advice per level with the profile's own
- * subagent type names.
+ * subagent type names. `telemetryFiles` (default `<agentDir>/telemetry/cache-usage.jsonl`,
+ * `~/` expanded) are the cache-telemetry logs whose Copilot rows give credits per
+ * day (`creditsPerDollar`, default 100); with them, up to `maxSpikeDays` (2)
+ * days over `spikeFactor` (2) × the even daily share count as one-offs and the
+ * projection runs on the other days. Without them the average is the rate.
  * Command: /copilot-pace — refresh and show the numbers.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -30,7 +34,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { fetchUsage, pickSnapshot, readTokenFromKeychain } from "../copilot-usage/quota.ts";
-import { computePace, DEFAULT_RULES, localDate, paceLine, paceNote, recordReading, type Pace, type PaceLevel, type PaceRules, type PaceState } from "./pace.ts";
+import { computePace, dailyCredits, DEFAULT_RULES, localDate, periodStart, paceLine, paceNote, recordReading, type Pace, type PaceLevel, type PaceRules, type PaceState } from "./pace.ts";
 
 export const CUSTOM_TYPE = "copilot-pace";
 
@@ -38,6 +42,15 @@ interface Config {
 	enabled: boolean;
 	refreshMinutes: number;
 	rules: PaceRules;
+	/** cache-telemetry logs whose Copilot rows give the per-day breakdown. */
+	telemetryFiles: string[];
+	creditsPerDollar: number;
+	spikeFactor: number;
+	maxSpikeDays: number;
+}
+
+function expandHome(path: string): string {
+	return path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
 }
 
 function agentDir(): string {
@@ -45,13 +58,26 @@ function agentDir(): string {
 }
 
 function loadConfig(dir: string): Config {
-	const cfg: Config = { enabled: true, refreshMinutes: 15, rules: { ...DEFAULT_RULES } };
+	const cfg: Config = {
+		enabled: true,
+		refreshMinutes: 15,
+		rules: { ...DEFAULT_RULES },
+		telemetryFiles: [join(dir, "telemetry", "cache-usage.jsonl")],
+		creditsPerDollar: 100,
+		spikeFactor: 2,
+		maxSpikeDays: 2,
+	};
 	const file = join(dir, "copilot-pace.json");
 	if (!existsSync(file)) return cfg;
 	try {
 		const raw = JSON.parse(readFileSync(file, "utf-8")) as Partial<Config>;
 		if (typeof raw.enabled === "boolean") cfg.enabled = raw.enabled;
 		if (typeof raw.refreshMinutes === "number" && raw.refreshMinutes > 0) cfg.refreshMinutes = raw.refreshMinutes;
+		if (Array.isArray(raw.telemetryFiles)) cfg.telemetryFiles = raw.telemetryFiles.filter((f): f is string => typeof f === "string").map(expandHome);
+		for (const key of ["creditsPerDollar", "spikeFactor"] as const) {
+			if (typeof raw[key] === "number" && raw[key]! > 0) cfg[key] = raw[key]!;
+		}
+		if (typeof raw.maxSpikeDays === "number" && raw.maxSpikeDays >= 0) cfg.maxSpikeDays = raw.maxSpikeDays;
 		for (const [level, text] of Object.entries(raw.rules ?? {})) {
 			if (level in cfg.rules && typeof text === "string" && text.trim()) cfg.rules[level as keyof PaceRules] = text.trim();
 		}
@@ -76,6 +102,19 @@ function writeState(file: string, state: PaceState): void {
 	} catch {
 		// a lost baseline only makes "today" start later
 	}
+}
+
+/** Per-day credits from the telemetry logs, or undefined when none is readable. */
+function readDays(config: Config, sinceMs: number): Map<string, number> | undefined {
+	const lines: string[] = [];
+	for (const file of config.telemetryFiles) {
+		try {
+			lines.push(...readFileSync(file, "utf-8").split("\n"));
+		} catch {
+			// a profile without telemetry adds nothing
+		}
+	}
+	return lines.length > 0 ? dailyCredits(lines, sinceMs, config.creditsPerDollar) : undefined;
 }
 
 export default function copilotPace(pi: ExtensionAPI): void {
@@ -115,7 +154,11 @@ export default function copilotPace(pi: ExtensionAPI): void {
 			const used = Math.max(0, total - (snap.remaining ?? total));
 			const state = recordReading(readState(stateFile), used, resetIso, now);
 			writeState(stateFile, state);
-			pace = computePace(used, total, resetIso, now, state.dayStart);
+			pace = computePace(used, total, resetIso, now, state.dayStart, {
+				days: readDays(config, periodStart(Date.parse(resetIso))),
+				spikeFactor: config.spikeFactor,
+				maxSpikeDays: config.maxSpikeDays,
+			});
 			lastError = undefined;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);

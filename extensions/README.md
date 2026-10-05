@@ -391,14 +391,20 @@ quota. Reads the same endpoint and Keychain token as copilot-usage (shared in
 `<agentDir>/state/copilot-pace.json` and grades the pace: `ok` (the average
 lasts until the reset), `high-today` (today above twice the daily budget),
 `over` (at the average the quota is gone before the reset), `critical` (gone
-within 3 days or under 5 % left). The coordinator gets a note at the start of a
+within 3 days or under 5 % left). The projection runs on the typical day:
+credits per day come from the cache-telemetry logs (`telemetryFiles`, Copilot
+request rows × `creditsPerDollar`), and up to `maxSpikeDays` (2) completed days
+over `spikeFactor` (2) × the even daily share count as one-offs (a migration,
+an eval run) and are left out of the rate, their credits still spent; a third
+spike makes the plain average the rate again. A spike in progress still shows
+as `high-today`. The coordinator gets a note at the start of a
 turn when the level changes (and once a day while it is not ok), and one
 `[copilot-pace: <level>]` line at the end of every `subagent` result while it
 is not ok; both sit after the cached prefix. Config `copilot-pace.json`
 (`enabled`, `refreshMinutes` default 15, `rules` per level to name the
 profile's own subagent types); `/copilot-pace` refreshes and shows the numbers.
-Not loaded in subagents. "Today" starts from the first reading of the day on a
-fresh state file, so the first day under-counts.
+Not loaded in subagents. Without telemetry "today" starts from the first
+quota reading of the day and the plain average is the rate.
 
 ## gateway-budget
 
