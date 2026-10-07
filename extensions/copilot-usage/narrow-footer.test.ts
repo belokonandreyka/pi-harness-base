@@ -50,12 +50,12 @@ describe("narrow footer", () => {
 	});
 
 	test("line 1: path and role; line 2: context bar, percent, limit, cache hit; line 3: cost", () => {
-		expect(narrowLines(base, 50)).toEqual(["../site/Scripts (test)" + " ".repeat(50 - 22 - 12) + "orchestrator", "●●●●◑○○○○○ 44% 70k/160k" + " ".repeat(50 - 23 - 7) + "CH96.2%", "$1.503"]);
+		expect(narrowLines(base, 50)).toEqual(["../site/Scripts (test)" + " ".repeat(50 - 22 - 12) + "orchestrator", "●●●●◐○○○○○ 44% 70k/160k" + " ".repeat(50 - 23 - 7) + "CH96.2%", "$1.503"]);
 	});
 
 	test("the bar rounds to ten dots and clamps at full", () => {
 		expect(narrowLines({ ...base, contextTokens: 0 }, 50)[1]).toBe("○○○○○○○○○○ 0% 0/160k" + " ".repeat(50 - 20 - 7) + "CH96.2%");
-		expect(narrowLines({ ...base, contextTokens: 136_000 }, 50)[1]).toBe("●●●●●●●●◑○ 85% 136k/160k" + " ".repeat(50 - 24 - 7) + "CH96.2%");
+		expect(narrowLines({ ...base, contextTokens: 136_000 }, 50)[1]).toBe("●●●●●●●●◐○ 85% 136k/160k" + " ".repeat(50 - 24 - 7) + "CH96.2%");
 		expect(narrowLines({ ...base, contextTokens: 170_000 }, 50)[1]).toBe("●●●●●●●●●● 100% 170k/160k" + " ".repeat(50 - 25 - 7) + "CH96.2%");
 	});
 
@@ -63,10 +63,10 @@ describe("narrow footer", () => {
 		expect(barDots(0)).toEqual({ filled: "", empty: "○○○○○○○○○○" });
 		expect(barDots(0.01)).toEqual({ filled: "", empty: "○○○○○○○○○○" });
 		expect(barDots(0.03)).toEqual({ filled: "◔", empty: "○○○○○○○○○" });
-		expect(barDots(0.05)).toEqual({ filled: "◑", empty: "○○○○○○○○○" });
+		expect(barDots(0.05)).toEqual({ filled: "◐", empty: "○○○○○○○○○" });
 		expect(barDots(0.07)).toEqual({ filled: "◕", empty: "○○○○○○○○○" });
 		expect(barDots(0.095)).toEqual({ filled: "●", empty: "○○○○○○○○○" });
-		expect(barDots(0.44)).toEqual({ filled: "●●●●◑", empty: "○○○○○" });
+		expect(barDots(0.44)).toEqual({ filled: "●●●●◐", empty: "○○○○○" });
 		expect(barDots(1.2)).toEqual({ filled: "●●●●●●●●●●", empty: "" });
 		for (let f = 0; f <= 1.0001; f += 0.01) {
 			const b = barDots(f);
@@ -76,7 +76,7 @@ describe("narrow footer", () => {
 
 	test("unknown context right after a compaction shows an empty bar", () => {
 		expect(narrowLines({ ...base, contextTokens: null }, 50)[1]).toBe("○○○○○○○○○○ ?% ?/160k" + " ".repeat(50 - 20 - 7) + "CH96.2%");
-		expect(narrowLines(base, 25)[1]).toBe("●●●●◑○○○○○ 44% 70k/160k");
+		expect(narrowLines(base, 25)[1]).toBe("●●●●◐○○○○○ 44% 70k/160k");
 	});
 
 	test("the ceiling status is parsed into tokens", () => {
@@ -165,7 +165,7 @@ describe("narrow footer", () => {
 			50,
 		);
 		expect(tagged[0]).toBe("<muted>../site/Scripts</><dim> (</><accent>test</><dim>)</>" + " ".repeat(50 - 22 - 12) + "<accent>orchestrator</>");
-		expect(tagged[1]).toBe("<green>●●●●◑</><dim>○○○○○</> <green>44%</> <dim>70k/160k</>" + " ".repeat(50 - 23 - 7) + "<success>CH96.2%</>");
+		expect(tagged[1]).toBe("<green>●●●●◐</><dim>○○○○○</> <green>44%</> <dim>70k/160k</>" + " ".repeat(50 - 23 - 7) + "<success>CH96.2%</>");
 		expect(tagged[2]).toContain("<text>$1.503</>");
 		expect(tagged[0]).toContain("<accent>orchestrator</>");
 		expect(tagged[2]).toContain("<thinkingMedium>mid</>");
@@ -194,7 +194,7 @@ describe("full footer (wide terminals)", () => {
 	test("same three lines, nothing shortened, other statuses on line 4", () => {
 		const lines = footerLines(wide, 140, true);
 		expect(lines[0]).toBe("~/work/portal/site/Scripts (vitest-migration-2)" + " ".repeat(140 - 47 - 12) + "orchestrator");
-		expect(lines[1].startsWith("●●●●◑○○○○○ 44% 70k/160k ")).toBe(true);
+		expect(lines[1].startsWith("●●●●◐○○○○○ 44% 70k/160k ")).toBe(true);
 		expect(lines[1].endsWith("CH96.2%")).toBe(true);
 		expect(lines[2]).toBe("$1.503 · gw wk $26.7/500 · mo $894/2000" + " ".repeat(140 - 39 - 39) + "(vitu-gateway) claude-opus-5-5 · medium");
 		expect(lines[3]).toBe("RapidTiger2 (orchestrator) (2 peers) focus: local ●1 MCP: 5 servers enabled");

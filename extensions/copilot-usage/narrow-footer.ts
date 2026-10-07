@@ -5,7 +5,7 @@
  * percentage that repeats the ceiling, peer and budget statuses.
  *
  *   line 1  ../site/Scripts (branch)                       orchestrator
- *   line 2  ●●●●◑○○○○○ 44% 70k/160k                          CH96.2%
+ *   line 2  ●●●●◐○○○○○ 44% 70k/160k                          CH96.2%
  *   line 3  $1.503 · wk $26.7                  (g) opus-5.5 · mid
  *
  * Line 2 is the context against the compaction limit (the context-ceiling
@@ -114,12 +114,16 @@ export function creditsText(credits: number): string {
 export const BAR_DOTS = 10;
 
 /**
- * The dots of the context bar, in quarter steps: ○ ◔ ◑ ◕ ●. JetBrains Mono has
- * no half circles; the patched "JetBrains Mono Herdr"
- * (scripts/patch-terminal-font.py) adds ◐ ◑ from the font's own ring, so they
- * match ○ ● in Ghostty and, once the same .ttf is imported, in Moshi. Without
- * the patched font, or in a terminal started before it was installed (Ghostty
- * loads fonts once), the half circle comes from a fallback font and sits off size.
+ * The dots of the context bar, in quarter steps: ○ ◔ ◐ ◕ ●. The partial dot
+ * fills counter-clockwise from 12 o'clock, so its filled side faces the full
+ * dots on its left: the quarter sits top left, the half is the left half (◐).
+ * Unicode has no top-left ◔ or top-right-empty ◕, so the patched "JetBrains
+ * Mono Herdr" (scripts/patch-terminal-font.py) mirrors those two and adds ◐ ◑,
+ * which JetBrains Mono lacks, from the font's own ring; all of them match ○ ●
+ * in Ghostty and, once the same .ttf is imported, in Moshi. Without the patched
+ * font the quarter steps read clockwise and the half circle comes from a
+ * fallback font, off size; a terminal started before the font was installed
+ * (Ghostty loads fonts once) shows the same until it restarts.
  */
 export function barDots(fill: number, dots = BAR_DOTS): { filled: string; empty: string } {
 	const x = Math.min(1, Math.max(0, fill)) * dots;
@@ -128,7 +132,7 @@ export function barDots(fill: number, dots = BAR_DOTS): { filled: string; empty:
 	let partial = "";
 	if (frac >= 0.875) full += 1;
 	else if (frac >= 0.625) partial = "◕";
-	else if (frac >= 0.375) partial = "◑";
+	else if (frac >= 0.375) partial = "◐";
 	else if (frac >= 0.125) partial = "◔";
 	full = Math.min(full, dots);
 	const used = full + (partial ? 1 : 0);

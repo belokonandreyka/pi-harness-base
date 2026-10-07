@@ -7,8 +7,10 @@ as boxes there. This script copies them into a JetBrains Mono Regular, maps U+2B
 (the plugin's LED glyph, which JetBrains Mono lacks and macOS otherwise draws
 too wide, swallowing the space after it) to the cell-sized ● outline, adds the
 half circles ◐ ◑ (U+25D0/25D1, which JetBrains Mono lacks: the pi footer's
-context bar uses them, and a fallback font draws them larger than ○ ●), and
-installs the result as one family you pick in Terminal > Settings > Profiles >
+context bar uses them, and a fallback font draws them larger than ○ ●),
+mirrors ◔ ◕ left to right (the bar's partial dot fills counter-clockwise from
+12 o'clock: top-left quarter, left half, all but the top-right quarter, and
+Unicode has no such quarter glyphs), and installs the result as one family you pick in Terminal > Settings > Profiles >
 Text. Ghostty can use the same font. Running it on an already patched font
 (`--jbm ~/Library/Fonts/JetBrainsMonoHerdr-Regular.ttf`) only adds what is
 missing.
@@ -37,6 +39,7 @@ JBM_RELEASES = "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/la
 LED, LED_SOURCE = 0x2B24, 0x25CF   # ⬤ is drawn with the cell-sized ● outline
 RING = 0x25CB                      # ○: outer contour, then the hole
 HALF_LEFT, HALF_RIGHT = 0x25D0, 0x25D1   # ◐ left half black, ◑ right half black
+QUARTERS = (0x25D4, 0x25D5)        # ◔ ◕, mirrored into counter-clockwise steps
 
 
 def half_circle(base, filled_left: bool):
@@ -75,6 +78,22 @@ def half_circle(base, filled_left: bool):
         q.curveTo((cx - r, cy - k), (cx - k, cy - r), (cx, cy - r))
     q.closePath()
     return pen.glyph(), base["hmtx"][cmap[RING]]
+
+
+def mirrored(base, cp: int):
+    """The glyph for `cp` flipped left to right within its advance. Flipping
+    reverses the winding, so the contours are reversed back for TrueType."""
+    from fontTools.pens.reverseContourPen import ReverseContourPen
+    from fontTools.pens.transformPen import TransformPen
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+
+    glyf, cmap = base["glyf"], base.getBestCmap()
+    advance, _ = base["hmtx"][cmap[cp]]
+    pen = TTGlyphPen(None)
+    glyf[cmap[cp]].draw(TransformPen(ReverseContourPen(pen), (-1, 0, 0, 1, advance, 0)), glyf)
+    glyph = pen.glyph()
+    glyph.recalcBounds(glyf)
+    return glyph, (advance, glyph.xMin)
 
 
 def ensure_fonttools(tmp: str):
@@ -146,6 +165,12 @@ def main() -> int:
                 if cp not in base_cmap:
                     glyph, metrics = half_circle(base, left)
                     add(f"uni{cp:04X}", cp, glyph, metrics)
+        for cp in QUARTERS:
+            name = f"ccw.{cp:04X}"
+            # On an already patched font the cmap points at the mirrored copy: flipping again would undo it.
+            if cp in base_cmap and name not in glyf.glyphs:
+                glyph, metrics = mirrored(base, cp)
+                add(name, cp, glyph, metrics)
         if LED not in base_cmap and LED_SOURCE in base_cmap:
             for t in unicode_tables:
                 t.cmap[LED] = base_cmap[LED_SOURCE]
