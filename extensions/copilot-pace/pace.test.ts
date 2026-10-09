@@ -1,7 +1,7 @@
 process.env.TZ = "UTC";
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import copilotPace, { CUSTOM_TYPE } from "./index.ts";
@@ -147,9 +147,10 @@ describe("extension", () => {
 		if (dir) rmSync(dir, { recursive: true, force: true });
 	});
 
-	function harness(remaining: number) {
+	function harness(remaining: number, config?: object) {
 		dir = mkdtempSync(join(tmpdir(), "copilot-pace-"));
 		process.env.PI_CODING_AGENT_DIR = dir;
+		if (config) writeFileSync(join(dir, "copilot-pace.json"), JSON.stringify(config));
 		globalThis.fetch = (async () =>
 			new Response(JSON.stringify({ quota_snapshots: { premium_interactions: { entitlement: 60_000, remaining } }, quota_reset_date_utc: new Date(Date.now() + 28 * DAY_MS).toISOString() }))) as typeof fetch;
 		const handlers = new Map<string, (event: any, ctx?: any) => any>();
@@ -172,6 +173,22 @@ describe("extension", () => {
 		expect(tagged.content.at(-1).text).toStartWith("[copilot-pace: ");
 		expect(h.get("tool_result")!({ toolName: "bash", content: [] })).toBeUndefined();
 		expect(JSON.parse(readFileSync(join(dir, "state", "copilot-pace.json"), "utf-8")).last.used).toBe(23_000);
+	});
+
+	test("a stale reading does not hold the turn: the refresh runs in the background", async () => {
+		const h = harness(37_000, { refreshMinutes: 0.0001 }); // 6 ms, so the next turn finds it stale
+		await h.get("before_agent_start")!({});
+		let calls = 0;
+		globalThis.fetch = (async () => {
+			calls++;
+			await new Promise((r) => setTimeout(r, 2000));
+			return new Response("{}");
+		}) as unknown as typeof fetch;
+		await new Promise((r) => setTimeout(r, 20));
+		const started = Date.now();
+		await h.get("before_agent_start")!({});
+		expect(Date.now() - started).toBeLessThan(200);
+		expect(calls).toBe(1);
 	});
 
 	test("subagents load nothing", () => {

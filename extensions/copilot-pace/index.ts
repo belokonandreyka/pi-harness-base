@@ -174,7 +174,12 @@ export default function copilotPace(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async () => {
-		await refresh();
+		// Stale-while-revalidate: the first message after a break used to wait ~2 s for
+		// the GitHub round trip (2026-10-09). The pace changes slowly, so the turn goes on
+		// with the last reading and the refresh lands for the next turn; only a session
+		// with no reading at all waits for one.
+		if (pace) void refresh();
+		else await refresh();
 		if (!pace) return;
 		const now = Date.now();
 		const today = localDate(now);
