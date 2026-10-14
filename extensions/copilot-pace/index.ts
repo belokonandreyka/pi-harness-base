@@ -27,6 +27,8 @@
  * day (`creditsPerDollar`, default 100); with them, up to `maxSpikeDays` (2)
  * days over `spikeFactor` (2) × the even daily share count as one-offs and the
  * projection runs on the other days. Without them the average is the rate.
+ * `mutedUntil` (an ISO date or time, e.g. "2026-11-01") silences the turn note
+ * and the subagent-result line until then; the command still shows the pace.
  * Command: /copilot-pace — refresh and show the numbers.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -47,6 +49,8 @@ interface Config {
 	creditsPerDollar: number;
 	spikeFactor: number;
 	maxSpikeDays: number;
+	/** epoch ms; no notes or tags before it. */
+	mutedUntil?: number;
 }
 
 function expandHome(path: string): string {
@@ -78,6 +82,8 @@ function loadConfig(dir: string): Config {
 			if (typeof raw[key] === "number" && raw[key]! > 0) cfg[key] = raw[key]!;
 		}
 		if (typeof raw.maxSpikeDays === "number" && raw.maxSpikeDays >= 0) cfg.maxSpikeDays = raw.maxSpikeDays;
+		const muted = (raw as { mutedUntil?: unknown }).mutedUntil;
+		if (typeof muted === "string" && Number.isFinite(Date.parse(muted))) cfg.mutedUntil = Date.parse(muted);
 		for (const [level, text] of Object.entries(raw.rules ?? {})) {
 			if (level in cfg.rules && typeof text === "string" && text.trim()) cfg.rules[level as keyof PaceRules] = text.trim();
 		}
@@ -129,6 +135,7 @@ export default function copilotPace(pi: ExtensionAPI): void {
 	let fetchedAt = 0;
 	let lastError: string | undefined;
 	let notified: { level: PaceLevel; date: string } | undefined;
+	const muted = () => config.mutedUntil !== undefined && Date.now() < config.mutedUntil;
 
 	async function refresh(force = false): Promise<void> {
 		const now = Date.now();
@@ -180,7 +187,7 @@ export default function copilotPace(pi: ExtensionAPI): void {
 		// with no reading at all waits for one.
 		if (pace) void refresh();
 		else await refresh();
-		if (!pace) return;
+		if (!pace || muted()) return;
 		const now = Date.now();
 		const today = localDate(now);
 		const changed = notified ? notified.level !== pace.level : pace.level !== "ok";
@@ -199,7 +206,7 @@ export default function copilotPace(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_result", (event: any) => {
-		if (event?.toolName !== "subagent" || !pace || pace.level === "ok") return;
+		if (event?.toolName !== "subagent" || !pace || pace.level === "ok" || muted()) return;
 		const content = Array.isArray(event?.content) ? event.content : null;
 		if (!content) return;
 		return { content: [...content, { type: "text", text: `[copilot-pace: ${pace.level}] ${paceLine(pace, Date.now())}` }] };

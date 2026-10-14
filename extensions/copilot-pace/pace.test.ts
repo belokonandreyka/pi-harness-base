@@ -191,6 +191,14 @@ describe("extension", () => {
 		expect(calls).toBe(1);
 	});
 
+	test("mutedUntil silences the note and the subagent tag until that date", async () => {
+		const h = harness(37_000, { mutedUntil: new Date(Date.now() + DAY_MS).toISOString() });
+		expect(await h.get("before_agent_start")!({})).toBeUndefined();
+		expect(h.get("tool_result")!({ toolName: "subagent", content: [{ type: "text", text: "launched" }] })).toBeUndefined();
+		const past = harness(37_000, { mutedUntil: "2020-01-01" });
+		expect((await past.get("before_agent_start")!({})).message.customType).toBe(CUSTOM_TYPE);
+	});
+
 	test("subagents load nothing", () => {
 		process.env.PI_COLLAB_SUBAGENT_DEPTH = "1";
 		expect(harness(37_000).size).toBe(0);
