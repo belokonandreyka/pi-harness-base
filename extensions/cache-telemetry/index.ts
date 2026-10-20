@@ -60,6 +60,7 @@ export default function cacheTelemetryExtension(pi: any): void {
       output: u.output ?? 0,
       cacheRead: u.cacheRead ?? 0,
       cacheWrite: u.cacheWrite ?? 0,
+      ...(u.cacheWrite1h ? { cacheWrite1h: u.cacheWrite1h } : {}),
       cost: u.cost?.total ?? 0,
       gapSec: lastResponseAt === null ? null : Math.round((now - lastResponseAt) / 1000),
     });
@@ -95,7 +96,7 @@ export default function cacheTelemetryExtension(pi: any): void {
     idleCheck = null;
   });
   pi.on("agent_end", (_event: any, ctx: any) => {
-    const ttlSec = ctx?.model?.promptCache?.short;
+    const ttlSec = ctx?.model?.promptCache?.[process.env.PI_CACHE_RETENTION?.trim() === "long" ? "long" : "short"];
     if (typeof ttlSec !== "number" || ttlSec <= 30) return;
     const endedAt = Date.now();
     if (idleCheck) clearTimeout(idleCheck);
@@ -110,7 +111,7 @@ export default function cacheTelemetryExtension(pi: any): void {
       } catch {
         // ignore
       }
-    }, Math.max(1000, ttlSec * 1000 - 20_000));
+    }, Math.max(1000, ttlSec * 1000 - 5_000)); // the gateway-warmer fires at 0.9 × lifetime and a replay can take 10 s: 20 s of margin gave 30 false alarms in 14 days
     (idleCheck as any).unref?.();
   });
 

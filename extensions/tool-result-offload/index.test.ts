@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import toolResultOffloadExtension, { DEFAULTS, loadConfig } from "./index.ts";
+import toolResultOffloadExtension, { DEFAULTS, fileSafeId, loadConfig } from "./index.ts";
 
 type Handler = (event: any, ctx: any) => any;
 const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
@@ -68,6 +68,21 @@ describe("tool-result-offload", () => {
     expect(existsSync(path)).toBe(true);
     expect(readFileSync(path, "utf-8")).toBe(big);
     expect(text.length).toBeLessThan(big.length / 3);
+  });
+
+  test("offloads a result whose tool-call id is longer than a file name allows", () => {
+    const { dir, fire } = setup({ thresholdChars: 2000, headChars: 300, tailChars: 100 });
+    const big = "y".repeat(5000);
+    const longId = `call_abc|${"Q".repeat(1200)}`;
+    const result = fire("bash", big, [], longId);
+    expect(result).toBeDefined();
+    const text = result.content[0].text;
+    expect(text).toContain("tool-result-offload");
+    const name = `bash-${fileSafeId(longId)}.txt`;
+    expect(name.length).toBeLessThan(100);
+    expect(existsSync(join(dir, name))).toBe(true);
+    expect(fileSafeId("abc-1")).toBe("abc-1");
+    expect(fileSafeId(longId)).not.toBe(fileSafeId(`call_abc|${"Q".repeat(1199)}Z`));
   });
 
   test("leaves small results, read results and image results untouched", () => {

@@ -29,7 +29,8 @@
  *   threshold logic still decides *when*; the extension never blocks a tool.
  *
  * Config `<agent-dir>/context-guard.json`: { enabled, warnTokensBefore (30000),
- * maxNoteChars (6000), maxSummaryChars (12000) }. Optional
+ * maxNoteChars (6000), maxSummaryChars (12000), summaryFallbackModel
+ * ("provider/model-id", retried once when the session's model fails the summary) }. Optional
  * `<agent-dir>/context-guard-summary.md` replaces the extra summary rules.
  * `/context-guard` prints the gauge.
  */
@@ -49,6 +50,7 @@ import {
   NOTE_ENTRY_TYPE,
   NOTE_TOOL,
   recoverState,
+  splitModelRef,
   summaryInstructions,
   validateNote,
   VIEW_TOOL,
@@ -64,8 +66,8 @@ export function resolveAgentDir(env: NodeJS.ProcessEnv = process.env): string {
 /** The two places this extension touches pi's runtime; swapped out in tests. */
 export interface GuardDeps {
   reserveTokens(ctx: any): Promise<number>;
-  /** Runs pi's own summariser with our instructions and returns its CompactionResult. */
-  runCompaction(event: any, ctx: any, instructions: string): Promise<{ summary: string; [k: string]: unknown }>;
+  /** Runs pi's own summariser with our instructions (on `model`, default the session's) and returns its CompactionResult. */
+  runCompaction(event: any, ctx: any, instructions: string, model?: any): Promise<{ summary: string; [k: string]: unknown }>;
   /** Schedules work after the current event handler returns (tests run it inline). */
   defer?(fn: () => void): void;
 }
@@ -79,7 +81,7 @@ export const defaultDeps: GuardDeps = {
       return DEFAULT_RESERVE_TOKENS;
     }
   },
-  async runCompaction(event, ctx, instructions) {
+  async runCompaction(event, ctx, instructions, model) {
     const { compact, SettingsManager } = await import("@earendil-works/pi-coding-agent");
     // The registry resolves auth per request and knows extension-registered
     // providers; going through it keeps the summary on the session's own model.
@@ -90,7 +92,7 @@ export const defaultDeps: GuardDeps = {
     } catch {
       retry = undefined;
     }
-    return compact(event.preparation, ctx.model, undefined, undefined, instructions, event.signal, ctx.thinkingLevel, streamFn, undefined, retry);
+    return compact(event.preparation, model ?? ctx.model, undefined, undefined, instructions, event.signal, ctx.thinkingLevel, streamFn, undefined, retry);
   },
 };
 
@@ -232,18 +234,48 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   pi.on("session_before_compact", async (event: any, ctx: any) => {
     if (!cfg.enabled || !ctx?.model) return undefined;
     const instructions = summaryInstructions(agentDir, cfg, note !== null, event?.customInstructions);
-    try {
-      const result = await deps.runCompaction(event, ctx, instructions);
+    const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+    const finish = (result: { summary: string; [k: string]: unknown }, summaryModel?: string) => {
       if (event?.signal?.aborted || !result?.summary?.trim()) return undefined;
       const summary = note ? appendNote(result.summary, note) : result.summary;
-      const details = { ...((result.details as Record<string, unknown> | undefined) ?? {}), contextGuard: { noteChars: note?.length ?? 0, reason: event?.reason } };
+      const contextGuard = { noteChars: note?.length ?? 0, reason: event?.reason, ...(summaryModel ? { summaryModel } : {}) };
+      const details = { ...((result.details as Record<string, unknown> | undefined) ?? {}), contextGuard };
       return { compaction: { ...result, summary, details } };
+    };
+
+    let firstError: string;
+    try {
+      return finish(await deps.runCompaction(event, ctx, instructions));
     } catch (error) {
       if (event?.signal?.aborted) return undefined;
-      const message = error instanceof Error ? error.message : String(error);
-      notify(ctx, `context-guard: own summary failed (${message}); pi's default compaction runs instead`, "warning");
-      return undefined;
+      firstError = errorText(error);
     }
+
+    // The session's model failed the summary (2026-10-19: the gateway answered
+    // stop_reason "content_filter" to both our summary and pi's default one, so
+    // the session could not compact at all). One retry on another model.
+    const fallbackRef = cfg.summaryFallbackModel;
+    const current = `${ctx.model.provider}/${ctx.model.id}`;
+    if (fallbackRef && fallbackRef !== current) {
+      const { provider, id } = splitModelRef(fallbackRef);
+      const fallback = ctx.modelRegistry?.find?.(provider, id);
+      if (!fallback) {
+        notify(ctx, `context-guard: own summary failed (${firstError}); fallback ${fallbackRef} is not a known model; pi's default compaction runs instead`, "warning");
+        return undefined;
+      }
+      try {
+        const out = finish(await deps.runCompaction(event, ctx, instructions, fallback), fallbackRef);
+        if (out) notify(ctx, `context-guard: own summary failed on ${current} (${firstError}); summary written by ${fallbackRef}`, "warning");
+        return out;
+      } catch (error) {
+        if (event?.signal?.aborted) return undefined;
+        notify(ctx, `context-guard: own summary failed (${firstError}) and on ${fallbackRef} (${errorText(error)}); pi's default compaction runs instead`, "warning");
+        return undefined;
+      }
+    }
+
+    notify(ctx, `context-guard: own summary failed (${firstError}); pi's default compaction runs instead`, "warning");
+    return undefined;
   });
 
   pi.on("session_compact", async (_event: any, ctx: any) => {

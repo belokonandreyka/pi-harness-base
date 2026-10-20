@@ -101,23 +101,31 @@ describe("context-guard gauge", () => {
     expect(loadConfig(dir)).toEqual(DEFAULT_CONFIG);
     writeFileSync(join(dir, "context-guard.json"), JSON.stringify({ warnTokensBefore: 20000, maxNoteChars: "big", enabled: false }));
     expect(loadConfig(dir)).toEqual({ ...DEFAULT_CONFIG, warnTokensBefore: 20000, enabled: false });
+    writeFileSync(join(dir, "context-guard.json"), JSON.stringify({ summaryFallbackModel: " github-copilot/claude-opus-5.5 " }));
+    expect(loadConfig(dir).summaryFallbackModel).toBe("github-copilot/claude-opus-5.5");
+    for (const bad of ["no-slash", "/id", "provider/", 42]) {
+      writeFileSync(join(dir, "context-guard.json"), JSON.stringify({ summaryFallbackModel: bad }));
+      expect(loadConfig(dir).summaryFallbackModel).toBeNull();
+    }
   });
 });
 
-function setup(options: { tokens?: number | null; window?: number; entries?: any[]; compactionResult?: any; compactionError?: string } = {}) {
-  tempAgentDir();
+function setup(options: { tokens?: number | null; window?: number; entries?: any[]; compactionResult?: any; compactionError?: string; fallbackError?: string; config?: Record<string, unknown>; models?: any[] } = {}) {
+  const dir = tempAgentDir();
+  if (options.config) writeFileSync(join(dir, "context-guard.json"), JSON.stringify(options.config));
   const handlers = new Map<string, Handler>();
   const tools = new Map<string, any>();
   const commands = new Map<string, { handler: Handler }>();
   const appended: Array<[string, any]> = [];
-  const calls: Array<{ instructions: string }> = [];
+  const calls: Array<{ instructions: string; model?: any }> = [];
   const sent: string[] = [];
   const deps: GuardDeps = {
     defer: (fn) => fn(),
     reserveTokens: async () => 16384,
-    runCompaction: async (_event, _ctx, instructions) => {
-      calls.push({ instructions });
-      if (options.compactionError) throw new Error(options.compactionError);
+    runCompaction: async (_event, _ctx, instructions, model) => {
+      calls.push({ instructions, model });
+      if (model && options.fallbackError) throw new Error(options.fallbackError);
+      if (!model && options.compactionError) throw new Error(options.compactionError);
       return options.compactionResult ?? { summary: "## Goal\nfinish\n", firstKeptEntryId: "k1", tokensBefore: 159000, usage: { input: 1 }, details: { readFiles: [] } };
     },
   };
@@ -141,6 +149,7 @@ function setup(options: { tokens?: number | null; window?: number; entries?: any
     ui: { notify: (text: string, level?: string) => notes.push({ text, level }) },
     getContextUsage: () => ({ tokens, contextWindow: model.contextWindow, percent: null }),
     sessionManager: { getEntries: () => options.entries ?? [] },
+    modelRegistry: { find: (provider: string, id: string) => (options.models ?? []).find((m) => m.provider === provider && m.id === id) },
     setTokens: (n: number | null) => {
       tokens = n;
     },
@@ -251,6 +260,42 @@ describe("context-guard wiring", () => {
     expect(await handlers.get("session_before_compact")!({ reason: "threshold", signal: { aborted: false }, preparation: {} }, ctx)).toBeUndefined();
     expect(notes.at(-1)?.level).toBe("warning");
     expect(notes.at(-1)?.text).toContain("boom");
+  });
+
+  test("retries the summary once on summaryFallbackModel and keeps the note", async () => {
+    const copilot = { provider: "github-copilot", id: "claude-opus-5.5", contextWindow: 200000 };
+    const { tools, handlers, calls, ctx, notes } = setup({
+      compactionError: "Unhandled stop reason: content_filter",
+      config: { summaryFallbackModel: "github-copilot/claude-opus-5.5" },
+      models: [copilot],
+    });
+    await tools.get("handoff_note")!.execute("1", { note: "NEXT ACTION: commit" }, undefined, undefined, ctx);
+    const out = await handlers.get("session_before_compact")!({ reason: "threshold", signal: { aborted: false }, preparation: {} }, ctx);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].model).toBeUndefined();
+    expect(calls[1].model).toBe(copilot);
+    expect(calls[1].instructions).toBe(calls[0].instructions);
+    expect(out.compaction.summary).toEndWith("NEXT ACTION: commit");
+    expect(out.compaction.details.contextGuard.summaryModel).toBe("github-copilot/claude-opus-5.5");
+    expect(notes.at(-1)?.text).toContain("content_filter");
+    expect(notes.at(-1)?.text).toContain("summary written by github-copilot/claude-opus-5.5");
+  });
+
+  test("falls through to pi's compaction when the fallback fails, is unknown or is the session's model", async () => {
+    const failing = setup({ compactionError: "first", fallbackError: "second", config: { summaryFallbackModel: "github-copilot/claude-opus-5.5" }, models: [{ provider: "github-copilot", id: "claude-opus-5.5" }] });
+    expect(await failing.handlers.get("session_before_compact")!({ reason: "threshold", signal: { aborted: false }, preparation: {} }, failing.ctx)).toBeUndefined();
+    expect(failing.calls).toHaveLength(2);
+    expect(failing.notes.at(-1)?.text).toContain("first");
+    expect(failing.notes.at(-1)?.text).toContain("second");
+
+    const unknown = setup({ compactionError: "first", config: { summaryFallbackModel: "nope/none" } });
+    expect(await unknown.handlers.get("session_before_compact")!({ reason: "threshold", signal: { aborted: false }, preparation: {} }, unknown.ctx)).toBeUndefined();
+    expect(unknown.calls).toHaveLength(1);
+    expect(unknown.notes.at(-1)?.text).toContain("not a known model");
+
+    const same = setup({ compactionError: "first", config: { summaryFallbackModel: "vitu-gateway/claude-opus-5" } });
+    expect(await same.handlers.get("session_before_compact")!({ reason: "threshold", signal: { aborted: false }, preparation: {} }, same.ctx)).toBeUndefined();
+    expect(same.calls).toHaveLength(1);
   });
 
   test("restores a pending note from the session on start", async () => {

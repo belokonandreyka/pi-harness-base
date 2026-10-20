@@ -11,6 +11,12 @@ export interface GuardConfig {
   maxSummaryChars: number;
   /** Start a turn after a compaction that ran once the model had already ended its turn asking to be told to continue. */
   resumeAfterCompaction: boolean;
+  /**
+   * `provider/model-id` that writes the summary when the session's own model fails to
+   * (a gateway content filter, an outage). null = no retry, pi's default compaction runs,
+   * which uses the same model and usually fails the same way.
+   */
+  summaryFallbackModel: string | null;
 }
 
 export const DEFAULT_CONFIG: GuardConfig = {
@@ -19,6 +25,7 @@ export const DEFAULT_CONFIG: GuardConfig = {
   maxNoteChars: 6000,
   maxSummaryChars: 12000,
   resumeAfterCompaction: true,
+  summaryFallbackModel: null,
 };
 
 /** pi's default `compaction.reserveTokens`, used when the settings cannot be read. */
@@ -39,10 +46,24 @@ export function loadConfig(agentDir: string): GuardConfig {
       maxNoteChars: num(raw.maxNoteChars, DEFAULT_CONFIG.maxNoteChars),
       maxSummaryChars: num(raw.maxSummaryChars, DEFAULT_CONFIG.maxSummaryChars),
       resumeAfterCompaction: raw.resumeAfterCompaction !== false,
+      summaryFallbackModel: parseModelRef(raw.summaryFallbackModel),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
+}
+
+/** `provider/model-id` with both parts non-empty, else null; the id itself may contain `/`. */
+export function parseModelRef(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const ref = value.trim();
+  const slash = ref.indexOf("/");
+  return slash > 0 && slash < ref.length - 1 ? ref : null;
+}
+
+export function splitModelRef(ref: string): { provider: string; id: string } {
+  const slash = ref.indexOf("/");
+  return { provider: ref.slice(0, slash), id: ref.slice(slash + 1) };
 }
 
 /** pi compacts at `contextWindow - reserveTokens`; context-ceiling clamps the window, so this follows the ceiling too. */

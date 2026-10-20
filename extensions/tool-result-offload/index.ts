@@ -18,6 +18,7 @@
  * (default `$TMPDIR/pi-offload`), `tools` (names; default all except read).
  * Env `PI_OFFLOAD_THRESHOLD=<chars>` overrides the threshold, `0` disables.
  */
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,6 +71,19 @@ export function loadConfig(agentDir: string, env: NodeJS.ProcessEnv = process.en
   return { enabled, thresholdChars, headChars, tailChars, dir, tools };
 }
 
+/**
+ * A tool-call id as a file-name fragment. Copilot's Responses API ids carry an
+ * encrypted payload after `|` and run past 1,000 characters; a path built from
+ * one fails with ENAMETOOLONG, the write is skipped and the result stays in
+ * context at full size (52 of 67 oversized subagent results in 14 days, all on
+ * gpt-6.1-sol, 2026-10-20). Keep a readable prefix and a short hash of the rest.
+ */
+export function fileSafeId(id: string): string {
+  const cleaned = id.replace(/[^A-Za-z0-9_-]/g, "_");
+  if (cleaned.length <= 64) return cleaned;
+  return `${cleaned.slice(0, 40)}-${createHash("sha1").update(id).digest("hex").slice(0, 12)}`;
+}
+
 export function marker(total: number, path: string, head: number, tail: number): string {
   return (
     `\n\n[tool-result-offload: output is ${total.toLocaleString()} chars (~${Math.round(total / 4).toLocaleString()} tokens); ` +
@@ -95,7 +109,7 @@ export default function toolResultOffloadExtension(pi: ExtensionAPI): void {
     if (total <= config.thresholdChars) return;
 
     const full = texts.map((c: any) => c.text).join("\n");
-    const safeId = String(event.toolCallId ?? Date.now()).replace(/[^A-Za-z0-9_-]/g, "_");
+    const safeId = fileSafeId(String(event.toolCallId ?? Date.now()));
     const path = join(config.dir, `${name}-${safeId}.txt`);
     try {
       if (!dirReady) {

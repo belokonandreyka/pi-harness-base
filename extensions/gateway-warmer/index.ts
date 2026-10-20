@@ -22,7 +22,7 @@
  * (it would be a full-price write for a cache nobody may use). Never runs
  * while an agent run is active: the next real request rewrites the cache anyway.
  *
- * Needs a `promptCache.short` lifetime on the model and `cacheWarming: "off"`
+ * Needs a `promptCache.short` (or `.long` under `PI_CACHE_RETENTION=long`) lifetime on the model and `cacheWarming: "off"`
  * in settings so pi's warmer does not double the spend. Config: the same
  * `cache-warm-policy.json` (idleMinutes, minContextTokens, childMaxAgeMinutes)
  * plus `gateway-warmer.json` { enabled }. Env `PI_GATEWAY_WARMER=0` disables.
@@ -66,6 +66,16 @@ export function isReplayable(payload: Record<string, unknown>): boolean {
 export function buildWarmPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const { stream: _stream, ...rest } = payload;
   return { ...rest, max_tokens: 1 };
+}
+
+/**
+ * Which `promptCache` lifetime the session's requests write: pi 1.x sends
+ * `cache_control.ttl: "1h"` when `PI_CACHE_RETENTION=long` (the orchestrator
+ * since 2026-10-20), so the refresh must be timed from the long tier or it
+ * would re-warm a cache that is nowhere near expiring.
+ */
+export function cacheTier(env: NodeJS.ProcessEnv = process.env): "short" | "long" {
+  return env.PI_CACHE_RETENTION?.trim() === "long" ? "long" : "short";
 }
 
 /** Refresh at 90% of the lifetime, at least ten seconds before it ends. */
@@ -146,7 +156,7 @@ export default function gatewayWarmerExtension(pi: any, deps: Deps = {}): void {
   }
 
   function ttlMs(): number | null {
-    const s = model()?.promptCache?.short;
+    const s = model()?.promptCache?.[cacheTier()];
     return typeof s === "number" && s > 0 ? s * 1000 : null;
   }
 

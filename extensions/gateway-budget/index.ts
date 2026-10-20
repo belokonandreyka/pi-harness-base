@@ -87,8 +87,10 @@ export function priceMessage(m: any, table: PriceTable): number | undefined {
     const price = id ? table.get(`${m.provider}/${id}`) : undefined;
     if (!price) continue;
     const u = m.usage ?? {};
+    const longWrite = u.cacheWrite1h ?? 0; // 1h cache writes bill at 2 × input (same rule as pi-ai's calculateCost)
+    const shortWrite = Math.max(0, (u.cacheWrite ?? 0) - longWrite);
     return (
-      ((u.input ?? 0) * price.input + (u.output ?? 0) * price.output + (u.cacheRead ?? 0) * price.cacheRead + (u.cacheWrite ?? 0) * price.cacheWrite) /
+      ((u.input ?? 0) * price.input + (u.output ?? 0) * price.output + (u.cacheRead ?? 0) * price.cacheRead + shortWrite * price.cacheWrite + longWrite * price.input * 2) /
       1_000_000
     );
   }
