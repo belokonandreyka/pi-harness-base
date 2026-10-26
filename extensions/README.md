@@ -526,3 +526,25 @@ cache-telemetry (the last handler that returns an action wins). Optional
 `<agent-dir>/cache-warm-policy.json` overrides the numbers. pi itself ends idle
 warming 30 minutes after the last real request. Each override is logged as
 `warm_override` in the cache-telemetry log and shows up in `/cache-stats`.
+
+## ask-user
+
+An `ask_user` tool for the top-level session: one to four multiple-choice
+questions in one dialog, each with a typed-answer fallback, the way Claude
+Code's AskUserQuestion and Codex's request_user_input work. The dialog is an
+adaptation of pi's MIT example `examples/extensions/questionnaire.ts`
+(`ui.ts`); option keys `1`-`9` pick directly, Esc dismisses.
+
+The point is the sound. While the dialog is open the extension emits
+`herdr:blocked` on pi's event bus; herdr's pi integration
+(`herdr integration install pi`, v8+) turns that into the `blocked` agent
+state, so herdr plays its needs-input sound (`ui.sound.request_path`) and marks
+the pane. A question asked in text ends the turn as `done`, which sounds like a
+finished task. The blocked state is released in a `finally`, so a failing or
+aborted dialog cannot leave the pane stuck.
+
+The tool refuses, without signalling herdr, in print/JSON/RPC runs and in
+collaborating-agents subagents (`PI_COLLAB_SUBAGENT_DEPTH >= 1`): nobody
+watches a subagent's pane, and it has `agent_message` to ask its coordinator.
+Register it only in coordinator profiles and tell the model when to use it in
+the profile's AGENTS.md. Tests: `bun test extensions/ask-user`.
