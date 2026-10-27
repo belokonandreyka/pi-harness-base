@@ -93,7 +93,7 @@ export function warningText(g: Gauge, noteSaved: boolean, maxNoteChars: number):
   if (noteSaved) {
     return `[context-guard] Handoff note saved. Context is at ${fmt(tokens)} of the ${fmt(g.limit)}-token compaction limit (${fmt(left)} left); pi compacts automatically at the limit and your note comes back verbatim after it. Keep working — do not end your turn for the compaction, it runs inside your turn and you continue after it; call ${NOTE_TOOL} again only if the next action changes.`;
   }
-  return `[context-guard] Context is at ${fmt(tokens)} of the ${fmt(g.limit)}-token compaction limit (${fmt(left)} left). At the limit pi replaces everything but the most recent messages with a summary written by another model, which tends to lose what you were about to do. Finish the current atomic step, then call ${NOTE_TOOL} with what that summary would lose: DONE (exact paths, commands, verified results), IN PROGRESS, key decisions, and the exact NEXT ACTION as the last line (max ${fmt(maxNoteChars)} chars). The note is appended to the summary verbatim. Avoid large reads until then; ${VIEW_TOOL} shows the live numbers. Compaction happens by itself inside your turn when the limit is reached and your work continues after it — never end your turn to "wait for the compaction": ending the turn hands control to the user and nothing resumes on its own.`;
+  return `[context-guard] Context is at ${fmt(tokens)} of the ${fmt(g.limit)}-token compaction limit (${fmt(left)} left). At the limit pi replaces everything but the most recent messages with a summary written by another model, which tends to lose what you were about to do. Finish the current atomic step, then call ${NOTE_TOOL} (limit ${fmt(maxNoteChars)} characters, aim for about ${fmt(noteTarget(maxNoteChars))}) with what that summary would lose: DONE (exact paths, commands, verified results), IN PROGRESS, key decisions, and the exact NEXT ACTION as the last line. The note is appended to the summary verbatim. Avoid large reads until then; ${VIEW_TOOL} shows the live numbers. Compaction happens by itself inside your turn when the limit is reached and your work continues after it — never end your turn to "wait for the compaction": ending the turn hands control to the user and nothing resumes on its own.`;
 }
 
 /**
@@ -137,13 +137,27 @@ export function contextView(v: ViewInput) {
   };
 }
 
+/**
+ * The model is told `maxChars`; the note is rejected only above `maxChars` × NOTE_GRACE.
+ * 14% of 413 notes (2026-10-01 → 10-27) were rejected and rewritten, almost all
+ * just over the line (median 6 150, max 6 968 against 6 000): the model aims at the
+ * limit and overshoots. A rewrite costs a full extra tool call; a few hundred extra
+ * characters in the summary cost far less.
+ */
+export const NOTE_GRACE = 1.2;
+
+/** The size the model is asked to aim for, well under the stated limit. */
+export function noteTarget(maxChars: number): number {
+  return Math.round((maxChars * 0.75) / 100) * 100;
+}
+
 export function validateNote(raw: unknown, maxChars: number): { ok: true; note: string } | { ok: false; error: string } {
   const note = typeof raw === "string" ? raw : "";
   if (note.trim().length === 0) {
     return { ok: false, error: `note must not be blank: write DONE, IN PROGRESS, key decisions and the exact NEXT ACTION last.` };
   }
-  if (note.length > maxChars) {
-    return { ok: false, error: `note is ${fmt(note.length)} chars, the limit is ${fmt(maxChars)}. Shorten it and call ${NOTE_TOOL} again.` };
+  if (note.length > Math.round(maxChars * NOTE_GRACE)) {
+    return { ok: false, error: `note is ${fmt(note.length)} chars, the limit is ${fmt(maxChars)}. Cut about ${fmt(note.length - noteTarget(maxChars))} chars (drop detail the files or git log already hold) and call ${NOTE_TOOL} again.` };
   }
   return { ok: true, note };
 }

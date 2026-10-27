@@ -49,6 +49,7 @@ import {
   loadConfig,
   NOTE_ENTRY_TYPE,
   NOTE_TOOL,
+  noteTarget,
   recoverState,
   splitModelRef,
   summaryInstructions,
@@ -200,7 +201,7 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
   pi.registerTool({
     name: NOTE_TOOL,
     label: "Handoff note",
-    description: `Save a note to yourself that survives the next automatic context compaction: it is appended verbatim to the compaction summary. Write what a summary written by someone else would lose: GOAL (the original task in one line, as asked, not as it has grown) first; DONE with exact paths, commands and verified results; IN PROGRESS; key decisions; and the exact NEXT ACTION as the last line (max ${cfg.maxNoteChars} chars). Calling it again replaces the note. Use it when a [context-guard] message asks for it or at a clean checkpoint when the context is high.`,
+    description: `Save a note to yourself that survives the next automatic context compaction: it is appended verbatim to the compaction summary. LIMIT ${cfg.maxNoteChars} characters; aim for about ${noteTarget(cfg.maxNoteChars)} (roughly ${Math.round(noteTarget(cfg.maxNoteChars) / 80)} lines of 80 characters), because a longer note is rejected and has to be written again. Write what a summary written by someone else would lose: GOAL (the original task in one line, as asked, not as it has grown) first; DONE with exact paths, commands and verified results; IN PROGRESS; key decisions; and the exact NEXT ACTION as the last line. Calling it again replaces the note. Use it when a [context-guard] message asks for it or at a clean checkpoint when the context is high.`,
     promptSnippet: "Save a handoff note that is appended verbatim to the next compaction summary",
     promptGuidelines: [
       `After a compaction, read the "Handoff note" at the end of the summary first and continue from its NEXT ACTION; never redo work it marks as done.`,
@@ -208,7 +209,7 @@ export default function contextGuardExtension(pi: ExtensionAPI, deps: GuardDeps 
     ],
     parameters: {
       type: "object",
-      properties: { note: { type: "string", description: "DONE (exact paths, commands, verified results), IN PROGRESS, key decisions, and the exact NEXT ACTION as the last line." } },
+      properties: { note: { type: "string", description: `At most ${cfg.maxNoteChars} characters, aim for about ${noteTarget(cfg.maxNoteChars)}. DONE (exact paths, commands, verified results), IN PROGRESS, key decisions, and the exact NEXT ACTION as the last line.` } },
       required: ["note"],
       additionalProperties: false,
     } as any,

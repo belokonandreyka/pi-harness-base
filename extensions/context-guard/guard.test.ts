@@ -67,7 +67,12 @@ describe("context-guard gauge", () => {
 
   test("notes are checked for blank and size, summary rules are templated and extended", () => {
     expect(validateNote("   ", 100).ok).toBe(false);
-    expect(validateNote("x".repeat(101), 100).ok).toBe(false);
+    // the stated limit has a 20% grace: just over is accepted, well over is rejected
+    expect(validateNote("x".repeat(115), 100).ok).toBe(true);
+    expect(validateNote("x".repeat(121), 100).ok).toBe(false);
+    const over = validateNote("x".repeat(8000), 6000);
+    expect(over.ok).toBe(false);
+    if (!over.ok) expect(over.error).toContain("the limit is 6,000. Cut about 3,500 chars");
     expect(validateNote("NEXT ACTION: run tests", 100)).toEqual({ ok: true, note: "NEXT ACTION: run tests" });
 
     const dir = tempAgentDir();
