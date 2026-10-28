@@ -11,6 +11,8 @@ export interface Question {
   header: string;
   question: string;
   options: QuestionOption[];
+  /** Text the decision is about (a draft comment, a commit message), shown above the question. */
+  context?: string;
 }
 
 export interface Answer {
@@ -30,10 +32,12 @@ export const HERDR_BLOCKED_EVENT = "herdr:blocked";
 export const MAX_QUESTIONS = 4;
 export const MAX_HEADER = 16;
 export const MAX_DEFAULT_MINUTES = 240;
+export const MAX_CONTEXT_LINES = 40;
 
 export const DESCRIPTION = [
   "Ask the user one to four multiple-choice questions in a dialog and wait for the answers.",
   "Use it when you are blocked on a decision that is genuinely theirs to make (scope, an irreversible or outward-facing action, a choice between materially different approaches) and cannot resolve it from the request, the code or sensible defaults.",
+  "When the user approves text you will send or publish (a comment, a message, a commit or PR text), put that full text in the question's `context`: the dialog shows nothing of your reasoning or earlier output.",
   "Do not use it for permission to continue, for 'is my plan ready?', or for choices with a conventional default; decide those and say so.",
   "The dialog makes herdr play its needs-input sound, so asking here instead of ending the turn with a question in text is how the user hears that you need him.",
 ].join(" ");
@@ -52,7 +56,8 @@ export function normalizeQuestions(raw: unknown): Question[] | string {
       .filter((o: QuestionOption) => o.label);
     if (options.length < 2) return `Error: question ${i + 1} needs at least 2 options.`;
     const header = (typeof q?.header === "string" && q.header.trim() ? q.header.trim() : `Q${i + 1}`).slice(0, MAX_HEADER);
-    questions.push({ header, question, options });
+    const context = typeof q?.context === "string" && q.context.trim() ? q.context.replace(/\s+$/, "") : undefined;
+    questions.push(context ? { header, question, options, context } : { header, question, options });
   }
   return questions;
 }

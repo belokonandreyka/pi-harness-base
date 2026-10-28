@@ -7,7 +7,7 @@
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Answer, Question, QuestionnaireResult } from "./questions.ts";
+import { type Answer, MAX_CONTEXT_LINES, type Question, type QuestionnaireResult } from "./questions.ts";
 
 type RenderOption = { label: string; description?: string; isOther?: boolean };
 
@@ -172,6 +172,18 @@ export function showQuestionnaire(
         });
       };
 
+      // The draft being approved, framed with a bar so it reads apart from the question.
+      const renderContext = () => {
+        if (!q?.context) return;
+        const bar = theme.fg("accent", "│ ");
+        const wrapped = q.context.split("\n").flatMap((l) => (l ? wrapTextWithAnsi(l, Math.max(1, w - 3)) : [""]));
+        wrapped.slice(0, MAX_CONTEXT_LINES).forEach((l) => lines.push(` ${bar}${theme.fg("text", l)}`));
+        if (wrapped.length > MAX_CONTEXT_LINES) {
+          lines.push(` ${bar}${theme.fg("warning", `… ${wrapped.length - MAX_CONTEXT_LINES} more lines not shown`)}`);
+        }
+        lines.push("");
+      };
+
       lines.push(theme.fg("accent", "─".repeat(w)));
       if (isMulti) {
         const tabs = ["← "];
@@ -186,6 +198,7 @@ export function showQuestionnaire(
       }
 
       if (inputMode && q) {
+        renderContext();
         add(" ", theme.fg("text", q.question));
         lines.push("");
         renderOptions();
@@ -206,6 +219,7 @@ export function showQuestionnaire(
         else add(" ", theme.fg("warning", `Unanswered: ${questions.filter((_, i) => !answers.has(i)).map((x) => x.header).join(", ")}`));
       } else if (q) {
         if (!isMulti) add(" ", theme.fg("accent", theme.bold(q.header)));
+        renderContext();
         add(" ", theme.fg("text", q.question));
         lines.push("");
         renderOptions();

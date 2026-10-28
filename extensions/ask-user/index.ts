@@ -24,6 +24,7 @@ const Params = Type.Object({
     Type.Object({
       header: Type.String({ description: "Very short label for the question (≤16 chars), e.g. 'Branch', 'Scope'. Shown in herdr's sidebar while waiting." }),
       question: Type.String({ description: "The full question, ending with a question mark." }),
+      context: Type.Optional(Type.String({ description: "The text the decision is about, shown above the question: the full draft of a comment, message, commit or PR text the user is approving. Required for any approval of text you will send or publish." })),
       options: Type.Array(
         Type.Object({
           label: Type.String({ description: "1-5 words. Put the recommended option first and end its label with ' (Recommended)'." }),

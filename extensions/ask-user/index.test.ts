@@ -17,6 +17,9 @@ describe("ask-user", () => {
     expect(normalizeQuestions({ questions: [{ question: " ", options: [] }] })).toContain("no text");
     const ok = normalizeQuestions({ questions: [{ question: " Which? ", options: [{ label: " A " }, { label: "B", description: " " }, { label: "" }] }] });
     expect(ok).toEqual([{ header: "Q1", question: "Which?", options: [{ label: "A", description: undefined }, { label: "B", description: undefined }] }]);
+    const withContext = normalizeQuestions({ questions: [{ ...q("Post"), context: "Hi team,\n\nquestion\n  " }] }) as any[];
+    expect(withContext[0].context).toBe("Hi team,\n\nquestion");
+    expect((normalizeQuestions({ questions: [{ ...q("x"), context: "  " }] }) as any[])[0]).not.toHaveProperty("context");
     const long = normalizeQuestions({ questions: [{ ...q("x"), header: "A very long header indeed" }] }) as any[];
     expect(long[0].header.length).toBe(16);
   });
