@@ -34,6 +34,7 @@ const Params = Type.Object({
     }),
     { description: "1-4 questions asked in one dialog." },
   ),
+  defaultAfterMinutes: Type.Optional(Type.Number({ description: "Apply the first (Recommended) option of every unanswered question after this many minutes (at most 240). Only when every recommended option is safe and easy to undo; never for deleting or repairing data, pushing, deploying or spending." })),
 });
 
 export default function askUserExtension(pi: ExtensionAPI, ask: Ask = showQuestionnaire) {

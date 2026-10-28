@@ -22,11 +22,14 @@ export interface Answer {
 export interface QuestionnaireResult {
   answers: Answer[];
   cancelled: boolean;
+  /** No answer within `defaultAfterMinutes`; unanswered questions got their first option. */
+  timedOut?: boolean;
 }
 
 export const HERDR_BLOCKED_EVENT = "herdr:blocked";
 export const MAX_QUESTIONS = 4;
 export const MAX_HEADER = 16;
+export const MAX_DEFAULT_MINUTES = 240;
 
 export const DESCRIPTION = [
   "Ask the user one to four multiple-choice questions in a dialog and wait for the answers.",
@@ -60,8 +63,15 @@ export function blockedLabel(questions: Question[]): string {
 }
 
 export function formatAnswers(result: QuestionnaireResult): string {
+  if (result.timedOut) {
+    return [
+      "No answer in time, so the first (recommended) option was applied where the user had not answered:",
+      ...result.answers.map((a) => `- ${a.header}: ${a.typed ? `(typed) ${a.answer}` : a.answer}`),
+      "Go ahead with these and say in your reply that they were applied by default.",
+    ].join("\n");
+  }
   if (result.cancelled) {
-    return "The user dismissed the questions without answering. Do not ask them again in this turn; stop and wait for their next message.";
+    return "The user closed the questions without answering. Do not ask them again in this turn. Carry on with everything that does not depend on these answers, leave the decision open, and say in your reply what is still waiting on it.";
   }
   return [
     "The user answered:",
@@ -76,6 +86,40 @@ export async function whileBlocked<T>(pi: Pick<ExtensionAPI, "events">, label: s
     return await run();
   } finally {
     pi.events.emit(HERDR_BLOCKED_EVENT, { active: false });
+  }
+}
+
+/** Minutes after which the recommended options apply, or undefined when the call did not ask for it. */
+export function defaultAfterMs(raw: unknown): number | undefined | string {
+  const minutes = (raw as { defaultAfterMinutes?: unknown })?.defaultAfterMinutes;
+  if (minutes === undefined || minutes === null) return undefined;
+  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0 || minutes > MAX_DEFAULT_MINUTES) {
+    return `Error: defaultAfterMinutes must be a positive number of minutes, at most ${MAX_DEFAULT_MINUTES}.`;
+  }
+  return minutes * 60_000;
+}
+
+/** Keeps what the user answered and gives every other question its first option. */
+export function applyDefaults(questions: Question[], partial: Answer[]): Answer[] {
+  return questions.map((q) => partial.find((a) => a.header === q.header) ?? { header: q.header, answer: q.options[0].label, typed: false });
+}
+
+/** Runs the dialog; when `ms` passes without a result, closes it and applies the defaults. */
+export async function askWithDefault(run: (signal: AbortSignal) => Promise<QuestionnaireResult>, questions: Question[], ms: number, outer?: AbortSignal): Promise<QuestionnaireResult> {
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  outer?.addEventListener("abort", forward, { once: true });
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, ms);
+  try {
+    const result = await run(controller.signal);
+    if (timedOut && result.cancelled && !outer?.aborted) {
+      return { answers: applyDefaults(questions, result.answers), cancelled: false, timedOut: true };
+    }
+    return result;
+  } finally {
+    clearTimeout(timer);
+    outer?.removeEventListener("abort", forward);
   }
 }
 
@@ -97,7 +141,10 @@ export function createExecute(pi: Pick<ExtensionAPI, "events">, ask: Ask, env: R
     }
     const questions = normalizeQuestions(params);
     if (typeof questions === "string") return fail(questions);
-    const result = await whileBlocked(pi, blockedLabel(questions), () => ask(ctx, questions, signal));
+    const ms = defaultAfterMs(params);
+    if (typeof ms === "string") return fail(ms);
+    const result = await whileBlocked(pi, blockedLabel(questions), () =>
+      ms === undefined ? ask(ctx, questions, signal) : askWithDefault((s) => ask(ctx, questions, s), questions, ms, signal));
     return { content: [{ type: "text" as const, text: formatAnswers(result) }], details: result };
   };
 }

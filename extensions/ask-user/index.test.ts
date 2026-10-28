@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HERDR_BLOCKED_EVENT, isSubagent, blockedLabel, createExecute, formatAnswers, normalizeQuestions, whileBlocked } from "./questions.ts";
+import { HERDR_BLOCKED_EVENT, isSubagent, blockedLabel, createExecute, defaultAfterMs, formatAnswers, normalizeQuestions, whileBlocked } from "./questions.ts";
 
 function fakePi() {
   const events: Array<{ channel: string; data: any }> = [];
@@ -26,7 +26,7 @@ describe("ask-user", () => {
     expect(blockedLabel([q("Branch"), q("Scope"), q("PR")] as any)).toBe("Branch +2");
     expect(formatAnswers({ cancelled: false, answers: [{ header: "Branch", answer: "VITU-1", typed: false }, { header: "Why", answer: "because", typed: true }] }))
       .toBe("The user answered:\n- Branch: VITU-1\n- Why: (typed) because");
-    expect(formatAnswers({ cancelled: true, answers: [] })).toContain("dismissed");
+    expect(formatAnswers({ cancelled: true, answers: [] })).toContain("Carry on with everything that does not depend");
   });
 
   test("holds herdr's blocked state only while the dialog is open, also when it throws", async () => {
@@ -79,5 +79,29 @@ describe("ask-user", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("agent_message");
     expect(events).toEqual([]);
+  });
+  test("applies the recommended options when nobody answers in time, keeping real answers", async () => {
+    const { pi } = fakePi();
+    // The fake dialog answers the first question, then waits until it is closed.
+    const execute = createExecute(pi, (_ctx, questions, signal) => new Promise((resolve) => {
+      signal?.addEventListener("abort", () => resolve({ cancelled: true, answers: [{ header: questions[0].header, answer: "opt2", typed: false }] }));
+    }), {});
+    const result = await execute("id", { questions: [q("Build"), q("Phone")], defaultAfterMinutes: 0.0005 }, undefined, undefined, { mode: "tui", hasUI: true } as any);
+    expect(result.details).toEqual({ cancelled: false, timedOut: true, answers: [{ header: "Build", answer: "opt2", typed: false }, { header: "Phone", answer: "opt1", typed: false }] });
+    expect(result.content[0].text).toContain("applied by default");
+  });
+
+  test("an answer before the timeout wins, a user abort is not a default, and bad minutes are refused", async () => {
+    const { pi } = fakePi();
+    const answered = createExecute(pi, async (_c, qs) => ({ cancelled: false, answers: [{ header: qs[0].header, answer: "opt2", typed: false }] }), {});
+    const ok = await answered("id", { questions: [q("A")], defaultAfterMinutes: 5 }, undefined, undefined, { mode: "tui", hasUI: true } as any);
+    expect(ok.content[0].text).toBe("The user answered:\n- A: opt2");
+    const outer = new AbortController();
+    const aborted = createExecute(pi, (_c, _q, signal) => new Promise((resolve) => signal?.addEventListener("abort", () => resolve({ cancelled: true, answers: [] }))), {});
+    const pending = aborted("id", { questions: [q("A")], defaultAfterMinutes: 5 }, outer.signal, undefined, { mode: "tui", hasUI: true } as any);
+    outer.abort();
+    expect((await pending).details).toEqual({ cancelled: true, answers: [] });
+    expect(defaultAfterMs({ defaultAfterMinutes: 0 })).toContain("at most 240");
+    expect(defaultAfterMs({})).toBeUndefined();
   });
 });

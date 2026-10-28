@@ -543,6 +543,13 @@ the pane. A question asked in text ends the turn as `done`, which sounds like a
 finished task. The blocked state is released in a `finally`, so a failing or
 aborted dialog cannot leave the pane stuck.
 
+Closing the dialog does not stop the agent: the result tells it to carry on
+with everything that does not depend on the answers and to say what is still
+waiting. With `defaultAfterMinutes` the call applies the first (recommended)
+option of every unanswered question once that time passes, keeping the answers
+the user did give; the tool description limits that to options that are safe
+and easy to undo.
+
 The tool refuses, without signalling herdr, in print/JSON/RPC runs and in
 collaborating-agents subagents (`PI_COLLAB_SUBAGENT_DEPTH >= 1`): nobody
 watches a subagent's pane, and it has `agent_message` to ask its coordinator.
