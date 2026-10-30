@@ -24,6 +24,7 @@ const Params = Type.Object({
     Type.Object({
       header: Type.String({ description: "Very short label for the question (≤16 chars), e.g. 'Branch', 'Scope'. Shown in herdr's sidebar while waiting." }),
       question: Type.String({ description: "The full question, ending with a question mark." }),
+      alert: Type.Optional(Type.String({ description: "A short one-line warning (≤120 chars) shown as a red banner above the question, for a hazard the user must notice before answering (a frozen branch, a production target, deleting data). Not for ordinary emphasis." })),
       context: Type.Optional(Type.String({ description: "The text the decision is about, shown above the question: the full draft of a comment, message, commit or PR text the user is approving. Required for any approval of text you will send or publish." })),
       options: Type.Array(
         Type.Object({

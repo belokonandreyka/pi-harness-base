@@ -184,6 +184,17 @@ export function showQuestionnaire(
         lines.push("");
       };
 
+      // Raw ANSI: the theme has no red background usable in both themes (light toolErrorBg is nearly white, dark is a muted brown-red).
+      const renderAlert = () => {
+        if (!q?.alert) return;
+        const pre = w > 1 ? " " : "";
+        for (const l of wrapTextWithAnsi(q.alert, w - pre.length)) {
+          const line = pre + l;
+          lines.push(`\x1b[41m\x1b[1m\x1b[97m${line}${" ".repeat(Math.max(0, w - visibleWidth(line)))}\x1b[0m`);
+        }
+        lines.push("");
+      };
+
       lines.push(theme.fg("accent", "─".repeat(w)));
       if (isMulti) {
         const tabs = ["← "];
@@ -198,6 +209,7 @@ export function showQuestionnaire(
       }
 
       if (inputMode && q) {
+        renderAlert();
         renderContext();
         add(" ", theme.fg("text", q.question));
         lines.push("");
@@ -218,6 +230,7 @@ export function showQuestionnaire(
         if (allAnswered()) add(" ", theme.fg("success", "Press Enter to submit"));
         else add(" ", theme.fg("warning", `Unanswered: ${questions.filter((_, i) => !answers.has(i)).map((x) => x.header).join(", ")}`));
       } else if (q) {
+        renderAlert();
         if (!isMulti) add(" ", theme.fg("accent", theme.bold(q.header)));
         renderContext();
         add(" ", theme.fg("text", q.question));

@@ -533,7 +533,10 @@ An `ask_user` tool for the top-level session: one to four multiple-choice
 questions in one dialog, each with a typed-answer fallback, the way Claude
 Code's AskUserQuestion and Codex's request_user_input work. The dialog is an
 adaptation of pi's MIT example `examples/extensions/questionnaire.ts`
-(`ui.ts`); option keys `1`-`9` pick directly, Esc dismisses.
+(`ui.ts`); option keys `1`-`9` pick directly, Esc dismisses. A question may
+carry an optional `context` (draft text being approved, shown framed above the
+question) and an optional `alert` (a one-line hazard warning, at most 120
+characters, shown as a full-width red banner).
 
 The point is the sound. While the dialog is open the extension emits
 `herdr:blocked` on pi's event bus; herdr's pi integration

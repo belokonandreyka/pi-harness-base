@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HERDR_BLOCKED_EVENT, isSubagent, blockedLabel, createExecute, defaultAfterMs, formatAnswers, normalizeQuestions, whileBlocked } from "./questions.ts";
+import { HERDR_BLOCKED_EVENT, MAX_ALERT, isSubagent, blockedLabel, createExecute, defaultAfterMs, formatAnswers, normalizeQuestions, whileBlocked } from "./questions.ts";
 
 function fakePi() {
   const events: Array<{ channel: string; data: any }> = [];
@@ -20,6 +20,13 @@ describe("ask-user", () => {
     const withContext = normalizeQuestions({ questions: [{ ...q("Post"), context: "Hi team,\n\nquestion\n  " }] }) as any[];
     expect(withContext[0].context).toBe("Hi team,\n\nquestion");
     expect((normalizeQuestions({ questions: [{ ...q("x"), context: "  " }] }) as any[])[0]).not.toHaveProperty("context");
+    const withAlert = normalizeQuestions({ questions: [{ ...q("Push"), alert: "  STAGE FROZEN\n since  2026-10-30 " }] }) as any[];
+    expect(withAlert[0].alert).toBe("STAGE FROZEN since 2026-10-30");
+    expect((normalizeQuestions({ questions: [{ ...q("x"), alert: " \n " }] }) as any[])[0]).not.toHaveProperty("alert");
+    const capped = (normalizeQuestions({ questions: [{ ...q("x"), alert: "A".repeat(500) }] }) as any[])[0].alert;
+    expect(capped.length).toBe(MAX_ALERT);
+    expect(capped.endsWith("…")).toBe(true);
+    expect((normalizeQuestions({ questions: [{ ...q("x"), alert: "B".repeat(MAX_ALERT) }] }) as any[])[0].alert).toBe("B".repeat(MAX_ALERT));
     const long = normalizeQuestions({ questions: [{ ...q("x"), header: "A very long header indeed" }] }) as any[];
     expect(long[0].header.length).toBe(16);
   });

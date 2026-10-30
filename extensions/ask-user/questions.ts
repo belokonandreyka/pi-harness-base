@@ -13,6 +13,8 @@ export interface Question {
   options: QuestionOption[];
   /** Text the decision is about (a draft comment, a commit message), shown above the question. */
   context?: string;
+  /** One-line hazard warning (a frozen branch, a production target), shown as a red banner first. */
+  alert?: string;
 }
 
 export interface Answer {
@@ -33,6 +35,7 @@ export const MAX_QUESTIONS = 4;
 export const MAX_HEADER = 16;
 export const MAX_DEFAULT_MINUTES = 240;
 export const MAX_CONTEXT_LINES = 40;
+export const MAX_ALERT = 120;
 
 export const DESCRIPTION = [
   "Ask the user one to four multiple-choice questions in a dialog and wait for the answers.",
@@ -57,7 +60,9 @@ export function normalizeQuestions(raw: unknown): Question[] | string {
     if (options.length < 2) return `Error: question ${i + 1} needs at least 2 options.`;
     const header = (typeof q?.header === "string" && q.header.trim() ? q.header.trim() : `Q${i + 1}`).slice(0, MAX_HEADER);
     const context = typeof q?.context === "string" && q.context.trim() ? q.context.replace(/\s+$/, "") : undefined;
-    questions.push(context ? { header, question, options, context } : { header, question, options });
+    const collapsed = typeof q?.alert === "string" ? q.alert.replace(/\s+/g, " ").trim() : "";
+    const alert = collapsed.length > MAX_ALERT ? `${collapsed.slice(0, MAX_ALERT - 1).trimEnd()}…` : collapsed;
+    questions.push({ header, question, options, ...(alert ? { alert } : {}), ...(context ? { context } : {}) });
   }
   return questions;
 }
