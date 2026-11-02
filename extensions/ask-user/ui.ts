@@ -7,7 +7,7 @@
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { type Answer, MAX_CONTEXT_LINES, type Question, type QuestionnaireResult } from "./questions.ts";
+import { type Answer, blockedLabel, MAX_CONTEXT_LINES, type Question, type QuestionnaireResult } from "./questions.ts";
 
 type RenderOption = { label: string; description?: string; isOther?: boolean };
 
@@ -256,5 +256,8 @@ export function showQuestionnaire(
       },
       handleInput,
     };
-  });
+    // pi ≥1.5.0 reports the open dialog as blocked through OSC 7501 to terminals
+    // that answer its support query (Rex, iTerm2). herdr 0.9.5 does not, so the
+    // `herdr:blocked` event in questions.ts stays; older pi ignores this option.
+  }, { blocked: { kind: "question", message: blockedLabel(questions) } });
 }
