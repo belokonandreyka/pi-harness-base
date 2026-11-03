@@ -45,6 +45,12 @@ export const DESCRIPTION = [
   "The dialog makes herdr play its needs-input sound, so asking here instead of ending the turn with a question in text is how the user hears that you need him.",
 ].join(" ");
 
+// A question that points at text ("з цим текстом", "as shown above") without carrying
+// it in `context` shows the user nothing to approve: models keep doing this despite
+// the description, so it is refused and the model retries with the text.
+const REFERS_TO_TEXT =
+  /(?:\b(?:this|the above|following) (?:text|draft|comment|message|wording)\b|\btext (?:above|below)\b|\b(?:as|text) shown\b|\bshown (?:above|below)\b|(?:цим|цей|наведен\p{L}*|показан\p{L}*) (?:текст\p{L}*|коментар\p{L}*|чернетк\p{L}*|повідомлення)|текст\p{L}* (?:вище|нижче)|як показано|(?:этим|этот|приведенн\p{L}*|показанн\p{L}*) (?:текст\p{L}*|комментари\p{L}*|черновик\p{L}*|сообщени\p{L}*)|текст\p{L}* (?:выше|ниже)|как показано)/iu;
+
 /** Validates and trims the model's input; returns an error message for unusable input. */
 export function normalizeQuestions(raw: unknown): Question[] | string {
   const list = (raw as { questions?: unknown })?.questions;
@@ -60,6 +66,12 @@ export function normalizeQuestions(raw: unknown): Question[] | string {
     if (options.length < 2) return `Error: question ${i + 1} needs at least 2 options.`;
     const header = (typeof q?.header === "string" && q.header.trim() ? q.header.trim() : `Q${i + 1}`).slice(0, MAX_HEADER);
     const context = typeof q?.context === "string" && q.context.trim() ? q.context.replace(/\s+$/, "") : undefined;
+    if (!context) {
+      const said = [question, ...options.flatMap((o: QuestionOption) => [o.label, o.description ?? ""])].join("\n").match(REFERS_TO_TEXT);
+      if (said) {
+        return `Error: question ${i + 1} refers to text ("${said[0]}") but has no \`context\`. The dialog shows only the question and options, never your earlier output: put the full text the user is approving in that question's \`context\` and call ask_user again.`;
+      }
+    }
     const collapsed = typeof q?.alert === "string" ? q.alert.replace(/\s+/g, " ").trim() : "";
     const alert = collapsed.length > MAX_ALERT ? `${collapsed.slice(0, MAX_ALERT - 1).trimEnd()}…` : collapsed;
     questions.push({ header, question, options, ...(alert ? { alert } : {}), ...(context ? { context } : {}) });

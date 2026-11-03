@@ -17,6 +17,14 @@ describe("ask-user", () => {
     expect(normalizeQuestions({ questions: [{ question: " ", options: [] }] })).toContain("no text");
     const ok = normalizeQuestions({ questions: [{ question: " Which? ", options: [{ label: " A " }, { label: "B", description: " " }, { label: "" }] }] });
     expect(ok).toEqual([{ header: "Q1", question: "Which?", options: [{ label: "A", description: undefined }, { label: "B", description: undefined }] }]);
+    const refers = (question: string, description?: string) =>
+      normalizeQuestions({ questions: [{ header: "Jira comment", question, options: [{ label: "Post", description }, { label: "Hold" }] }] });
+    expect(refers("Постити коментар у MIVITU-284 з цим текстом?")).toContain('("цим текстом")');
+    expect(refers("Постити коментар у MIVITU-284 з текстом вище?")).toContain("no `context`");
+    expect(refers("Post the comment?", "Posts this text as a comment.")).toContain('("this text")');
+    expect(refers("Отправить с этим текстом?")).toContain("no `context`");
+    expect(Array.isArray(refers("Переводити MIVITU-284 в In Review?"))).toBe(true);
+    expect(Array.isArray(normalizeQuestions({ questions: [{ ...q("Post"), question: "Постити з цим текстом?", context: "Привіт" }] }))).toBe(true);
     const withContext = normalizeQuestions({ questions: [{ ...q("Post"), context: "Hi team,\n\nquestion\n  " }] }) as any[];
     expect(withContext[0].context).toBe("Hi team,\n\nquestion");
     expect((normalizeQuestions({ questions: [{ ...q("x"), context: "  " }] }) as any[])[0]).not.toHaveProperty("context");
