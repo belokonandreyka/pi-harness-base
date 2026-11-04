@@ -5,6 +5,11 @@
  * The projection runs on the typical day: one or two spike days in a period
  * (over twice the even daily share) are one-offs and left out of the rate,
  * though their credits stay spent; a third spike makes the average the rate.
+ *
+ * With `workDays` (e.g. Monday to Friday) every day count — days left, days
+ * elapsed, the even share behind the spike threshold — counts only those days,
+ * so a weekend neither stretches the budget nor dilutes the average. Credits
+ * spent on another day still count as spent.
  */
 
 export const DAY_MS = 86_400_000;
@@ -32,6 +37,14 @@ export interface Pace {
 	elapsedDays: number;
 	/** Credits per day that last exactly until the reset. */
 	budgetPerDay: number;
+	/** Today's share as the day began: (remaining + today) over the days left including today. */
+	dayBudget: number;
+	/** Today has spent more than its share. */
+	overToday: boolean;
+	/** Calendar days to the reset (daysLeft counts work days only when workDays is set). */
+	calendarDaysLeft: number;
+	/** The days counted, 0 = Sunday; undefined = every day. */
+	workDays?: number[];
 	/** Average credits per day since the period began. */
 	avgPerDay: number;
 	today: number;
@@ -54,6 +67,37 @@ export interface PaceOptions {
 	spikeFactor?: number;
 	/** Up to this many spike days in a period are treated as one-offs and left out of the rate. */
 	maxSpikeDays?: number;
+	/** Days of the week that count (0 = Sunday … 6 = Saturday); default every day. */
+	workDays?: number[];
+}
+
+function activeWorkDays(workDays?: number[]): number[] | undefined {
+	const days = [...new Set((workDays ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))];
+	return days.length > 0 && days.length < 7 ? days : undefined;
+}
+
+/** Whether a local date (YYYY-MM-DD) is a counted day. */
+export function isWorkDate(date: string, workDays?: number[]): boolean {
+	const days = activeWorkDays(workDays);
+	if (!days) return true;
+	const [y, m, d] = date.split("-").map(Number);
+	return days.includes(new Date(y!, m! - 1, d!, 12).getDay());
+}
+
+/** Days between two instants that fall on counted days, as a fraction (local time). */
+export function workDaysBetween(from: number, to: number, workDays?: number[]): number {
+	if (!(to > from)) return 0;
+	const days = activeWorkDays(workDays);
+	if (!days) return (to - from) / DAY_MS;
+	let total = 0;
+	for (let t = from; t < to; ) {
+		const next = new Date(t);
+		next.setHours(24, 0, 0, 0);
+		const end = Math.min(next.getTime(), to);
+		if (days.includes(new Date(t).getDay())) total += end - t;
+		t = end;
+	}
+	return total / DAY_MS;
 }
 
 export function localDate(ms: number): string {
@@ -132,14 +176,20 @@ export function computePace(
 	const reset = Date.parse(resetIso);
 	if (!(total > 0) || Number.isNaN(reset)) return undefined;
 	const remaining = Math.max(0, total - used);
-	const daysLeft = Math.max((reset - now) / DAY_MS, 1 / 24);
+	const workDays = activeWorkDays(options.workDays);
+	const start = periodStart(reset);
+	const calendarDaysLeft = Math.max((reset - now) / DAY_MS, 1 / 24);
+	const daysLeft = Math.max(workDaysBetween(now, reset, workDays), 1 / 24);
 	// A floor of one day keeps the first hours of a period from reading as a runaway.
-	const elapsedDays = Math.max((now - periodStart(reset)) / DAY_MS, 1);
+	const elapsedDays = Math.max(workDaysBetween(start, now, workDays), 1);
 	const budgetPerDay = remaining / daysLeft;
 	const avgPerDay = used / elapsedDays;
 	const todayDate = localDate(now);
 	const fromReadings = dayStart && dayStart.date === todayDate ? Math.max(0, used - dayStart.used) : 0;
 	const today = Math.max(fromReadings, options.days?.get(todayDate) ?? 0);
+	// Today's share is fixed as the day begins, so spending it does not shrink it.
+	const midnight = new Date(now).setHours(0, 0, 0, 0);
+	const dayBudget = (remaining + today) / Math.max(workDaysBetween(midnight, reset, workDays), 1);
 
 	// One or two heavy days (a migration, an eval run) say little about the
 	// rest of the month: their credits are already out of `remaining`, and the
@@ -148,10 +198,9 @@ export function computePace(
 	let basis: Pace["basis"] = "average";
 	let spikes: Pace["spikes"] = [];
 	if (options.days) {
-		const start = periodStart(reset);
-		const periodDays = (reset - start) / DAY_MS;
+		const periodDays = Math.max(workDaysBetween(start, reset, workDays), 1);
 		const threshold = (options.spikeFactor ?? 2) * (total / periodDays);
-		const completed = completedDates(start, now).map((date) => ({ date, credits: options.days!.get(date) ?? 0 }));
+		const completed = completedDates(start, now).filter((date) => isWorkDate(date, workDays)).map((date) => ({ date, credits: options.days!.get(date) ?? 0 }));
 		spikes = completed.filter((d) => d.credits > threshold);
 		const normal = completed.filter((d) => d.credits <= threshold);
 		if (spikes.length > (options.maxSpikeDays ?? 2)) basis = "spike-pattern";
@@ -172,6 +221,10 @@ export function computePace(
 		daysLeft,
 		elapsedDays,
 		budgetPerDay,
+		dayBudget,
+		overToday: today > dayBudget,
+		calendarDaysLeft,
+		workDays,
 		avgPerDay,
 		today,
 		// Telemetry counts from midnight; a reading baseline from the last reading before it.
@@ -199,10 +252,14 @@ function hhmm(ms: number): string {
 export function paceLine(p: Pace, now: number): string {
 	const day = localDate(p.todaySince);
 	const since = day === localDate(now) ? `since ${hhmm(p.todaySince)}` : `since ${day.slice(5)} ${hhmm(p.todaySince)}`;
+	const resetIn = p.workDays
+		? `reset in ${Math.ceil(p.calendarDaysLeft)}d (${Math.ceil(p.daysLeft)} work days)`
+		: `reset in ${Math.ceil(p.daysLeft)}d`;
+	const unit = p.workDays ? "work day" : "day";
 	const parts = [
-		`Copilot credits: ${fmtCredits(p.used)} of ${fmtCredits(p.total)} used, reset in ${Math.ceil(p.daysLeft)}d`,
-		`${fmtCredits(p.budgetPerDay)}/day lasts until the reset`,
-		`average so far ${fmtCredits(p.avgPerDay)}/day, today ${fmtCredits(p.today)} (${since})`,
+		`Copilot credits: ${fmtCredits(p.used)} of ${fmtCredits(p.total)} used, ${resetIn}`,
+		`${fmtCredits(p.budgetPerDay)}/${unit} lasts until the reset`,
+		`average so far ${fmtCredits(p.avgPerDay)}/${unit}, today ${fmtCredits(p.today)} of ${fmtCredits(p.dayBudget)} (${since})`,
 	];
 	const spikeList = p.spikes.map((d) => `${d.date.slice(5)} ${fmtCredits(d.credits)}`).join(", ");
 	if (p.basis === "without-spikes") {

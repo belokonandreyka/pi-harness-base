@@ -406,6 +406,17 @@ profile's own subagent types); `/copilot-pace` refreshes and shows the numbers.
 Not loaded in subagents. Without telemetry "today" starts from the first
 quota reading of the day and the plain average is the rate.
 
+`workDays` (0 = Sunday … 6 = Saturday, e.g. `[1,2,3,4,5]`) counts only those
+days everywhere: days left, the average, the spike threshold; weekend credits
+still count as spent. Today's share is fixed as the day begins: (remaining +
+today) over the counted days left, today included. With `route.models` (a map
+from a subagent model to another one, or to `{ "model", "reasoning" }`), the
+first reading over that share writes `<agentDir>/state/model-route.json` with
+`until` = the next local midnight. The collaborating-agents spawner reads it,
+so for the rest of the day every new subagent of a mapped type starts on the
+target and its spawn result says `model routed`. The coordinator gets one note
+when the route starts. Muting does not stop the route.
+
 ## gateway-budget
 
 Week and month spend on the AI gateway against the caps

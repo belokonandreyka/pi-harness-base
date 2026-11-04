@@ -29,6 +29,17 @@
  * projection runs on the other days. Without them the average is the rate.
  * `mutedUntil` (an ISO date or time, e.g. "2026-11-01") silences the turn note
  * and the subagent-result line until then; the command still shows the pace.
+ * `workDays` (0 = Sunday … 6 = Saturday, e.g. [1,2,3,4,5]) makes every day
+ * count — days left, average, the daily budget — count only those days.
+ *
+ * Over today's share: `route.models` maps a subagent model to another one
+ * ("github-copilot/claude-opus-5.5": "vitu-gateway/claude-opus-5-5", or
+ * { "model": …, "reasoning": "low" }). Once today's credits pass today's share
+ * ((remaining + today) / days left including today), the map goes to
+ * `<agentDir>/state/model-route.json` with `until` = the next local midnight;
+ * the collaborating-agents spawner reads it, so every new subagent of a mapped
+ * type starts on the target for the rest of the day. The coordinator gets one
+ * note when it starts. Muting does not stop the route.
  * Command: /copilot-pace — refresh and show the numbers.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -51,6 +62,50 @@ interface Config {
 	maxSpikeDays: number;
 	/** epoch ms; no notes or tags before it. */
 	mutedUntil?: number;
+	/** Days of the week that count, 0 = Sunday; undefined = every day. */
+	workDays?: number[];
+	/** Subagent model remap applied for the rest of a day that went over its share. */
+	routeModels?: Record<string, unknown>;
+}
+
+export interface ModelRoute {
+	until: number;
+	since: number;
+	reason: string;
+	models: Record<string, unknown>;
+}
+
+export function nextMidnight(now: number): number {
+	const d = new Date(now);
+	d.setHours(24, 0, 0, 0);
+	return d.getTime();
+}
+
+/** The route for the rest of today, or undefined when today is within its share. */
+export function routeFor(p: Pace, models: Record<string, unknown> | undefined, now: number): ModelRoute | undefined {
+	if (!p.overToday || !models || Object.keys(models).length === 0) return undefined;
+	return {
+		until: nextMidnight(now),
+		since: now,
+		reason: `Copilot today ${Math.round(p.today)} over its ${Math.round(p.dayBudget)} share`,
+		models,
+	};
+}
+
+function readRoute(file: string, now: number): ModelRoute | undefined {
+	try {
+		const route = JSON.parse(readFileSync(file, "utf-8")) as ModelRoute;
+		return typeof route?.until === "number" && now < route.until ? route : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function routeNote(route: ModelRoute): string {
+	const pairs = Object.entries(route.models)
+		.map(([from, to]) => `${from} → ${typeof to === "string" ? to : (to as { model?: string })?.model}`)
+		.join(", ");
+	return `Today's Copilot credits are over today's share (${route.reason}). Until midnight every new subagent of a Copilot type starts on the gateway instead: ${pairs}. The spawn result says "model routed" for each one. Subagents already running stay where they are. Mention it to the user once.`;
 }
 
 function expandHome(path: string): string {
@@ -82,6 +137,9 @@ function loadConfig(dir: string): Config {
 			if (typeof raw[key] === "number" && raw[key]! > 0) cfg[key] = raw[key]!;
 		}
 		if (typeof raw.maxSpikeDays === "number" && raw.maxSpikeDays >= 0) cfg.maxSpikeDays = raw.maxSpikeDays;
+		if (Array.isArray(raw.workDays)) cfg.workDays = raw.workDays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6);
+		const route = (raw as { route?: { models?: unknown } }).route;
+		if (route?.models && typeof route.models === "object" && !Array.isArray(route.models)) cfg.routeModels = route.models as Record<string, unknown>;
 		const muted = (raw as { mutedUntil?: unknown }).mutedUntil;
 		if (typeof muted === "string" && Number.isFinite(Date.parse(muted))) cfg.mutedUntil = Date.parse(muted);
 		for (const [level, text] of Object.entries(raw.rules ?? {})) {
@@ -101,7 +159,7 @@ function readState(file: string): PaceState {
 	}
 }
 
-function writeState(file: string, state: PaceState): void {
+function writeState(file: string, state: unknown): void {
 	try {
 		mkdirSync(dirname(file), { recursive: true });
 		writeFileSync(file, `${JSON.stringify(state)}\n`, "utf-8");
@@ -130,6 +188,8 @@ export default function copilotPace(pi: ExtensionAPI): void {
 	if (!config.enabled || isSubagent) return;
 
 	const stateFile = join(dir, "state", "copilot-pace.json");
+	const routeFile = join(dir, "state", "model-route.json");
+	let routeAnnounced: number | undefined;
 	let token: string | undefined;
 	let pace: Pace | undefined;
 	let fetchedAt = 0;
@@ -165,7 +225,12 @@ export default function copilotPace(pi: ExtensionAPI): void {
 				days: readDays(config, periodStart(Date.parse(resetIso))),
 				spikeFactor: config.spikeFactor,
 				maxSpikeDays: config.maxSpikeDays,
+				workDays: config.workDays,
 			});
+			if (pace && !readRoute(routeFile, now)) {
+				const route = routeFor(pace, config.routeModels, now);
+				if (route) writeState(routeFile, route);
+			}
 			lastError = undefined;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -187,8 +252,21 @@ export default function copilotPace(pi: ExtensionAPI): void {
 		// with no reading at all waits for one.
 		if (pace) void refresh();
 		else await refresh();
-		if (!pace || muted()) return;
+		if (!pace) return;
 		const now = Date.now();
+		const route = readRoute(routeFile, now);
+		if (route && routeAnnounced !== route.since) {
+			routeAnnounced = route.since;
+			return {
+				message: {
+					customType: CUSTOM_TYPE,
+					content: `${paceLine(pace, now)} ${routeNote(route)}`,
+					display: true,
+					details: { level: pace.level, used: pace.used, total: pace.total, routedUntil: route.until },
+				},
+			};
+		}
+		if (muted()) return;
 		const today = localDate(now);
 		const changed = notified ? notified.level !== pace.level : pace.level !== "ok";
 		const dailyReminder = pace.level !== "ok" && notified?.date !== today;
@@ -216,8 +294,10 @@ export default function copilotPace(pi: ExtensionAPI): void {
 		description: "Refresh and show the Copilot credit pace",
 		handler: async (_args, ctx) => {
 			await refresh(true);
+			const route = readRoute(routeFile, Date.now());
+			const routed = route ? ` Subagents routed off Copilot until ${new Date(route.until).toLocaleString()}.` : "";
 			ctx.ui.notify(
-				pace ? `[${pace.level}] ${paceLine(pace, Date.now())}` : `copilot-pace: ${lastError ?? "no data"}`,
+				pace ? `[${pace.level}] ${paceLine(pace, Date.now())}${routed}` : `copilot-pace: ${lastError ?? "no data"}`,
 				pace ? (pace.level === "ok" ? "info" : "warning") : "warning",
 			);
 		},

@@ -4,8 +4,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import copilotPace, { CUSTOM_TYPE } from "./index.ts";
-import { completedDates, computePace, dailyCredits, DAY_MS, paceLine, paceNote, periodStart, recordReading } from "./pace.ts";
+import copilotPace, { CUSTOM_TYPE, nextMidnight, routeFor } from "./index.ts";
+import { completedDates, computePace, dailyCredits, DAY_MS, isWorkDate, paceLine, paceNote, periodStart, recordReading, workDaysBetween } from "./pace.ts";
 
 const RESET = "2026-11-01T00:00:00Z";
 const at = (iso: string) => Date.parse(iso);
@@ -123,12 +123,70 @@ describe("spike days", () => {
 	});
 });
 
+const WEEKDAYS = [1, 2, 3, 4, 5];
+
+describe("work days", () => {
+	test("only counted days add up; a weekend counts nothing", () => {
+		// 2026-10-30 is a Friday.
+		expect(isWorkDate("2026-10-30", WEEKDAYS)).toBe(true);
+		expect(isWorkDate("2026-10-31", WEEKDAYS)).toBe(false);
+		expect(workDaysBetween(at("2026-10-30T12:00:00Z"), at("2026-11-02T12:00:00Z"), WEEKDAYS)).toBe(1);
+		expect(workDaysBetween(at("2026-10-31T00:00:00Z"), at("2026-11-02T00:00:00Z"), WEEKDAYS)).toBe(0);
+		expect(workDaysBetween(at("2026-10-31T00:00:00Z"), at("2026-11-02T00:00:00Z"))).toBe(2);
+	});
+
+	test("Mon–Fri: the budget is spread over the work days left, not the calendar", () => {
+		// Monday 2026-10-05 noon: 19 work days (and a half) left of 26.5 calendar days.
+		const now = at("2026-10-05T12:00:00Z");
+		const all = computePace(10_000, 60_000, RESET, now)!;
+		const week = computePace(10_000, 60_000, RESET, now, undefined, { workDays: WEEKDAYS })!;
+		expect(week.daysLeft).toBe(19.5);
+		expect(Math.round(week.budgetPerDay)).toBe(Math.round(50_000 / 19.5));
+		expect(week.budgetPerDay).toBeGreaterThan(all.budgetPerDay);
+		// Oct 1–2 (Thu, Fri) and Monday morning: 2.5 work days.
+		expect(week.elapsedDays).toBe(2.5);
+		expect(paceLine(week, now)).toContain("reset in 27d (20 work days); 2.6k/work day lasts until the reset");
+	});
+
+	test("weekend days are neither spikes nor normal days", () => {
+		const now = at("2026-10-06T12:00:00Z");
+		const days = new Map([["2026-10-01", 2000], ["2026-10-02", 2000], ["2026-10-03", 9000], ["2026-10-04", 0], ["2026-10-05", 2000]]);
+		const p = computePace(15_000, 60_000, RESET, now, undefined, { days, workDays: WEEKDAYS })!;
+		expect(p.spikes).toEqual([]);
+		expect(p.basis).toBe("average");
+	});
+});
+
+describe("today's share", () => {
+	test("fixed at the start of the day, so spending it does not shrink it", () => {
+		const now = at("2026-10-16T18:00:00Z");
+		const days = new Map([["2026-10-16", 3000]]);
+		const p = computePace(20_000, 60_000, RESET, now, undefined, { days })!;
+		// (40k left + 3k spent today) over the 16 days from midnight to the reset.
+		expect(p.dayBudget).toBe(43_000 / 16);
+		expect(p.overToday).toBe(true);
+		const calm = computePace(20_000, 60_000, RESET, now, undefined, { days: new Map([["2026-10-16", 1000]]) })!;
+		expect(calm.overToday).toBe(false);
+	});
+
+	test("over the share → a route until the next midnight; no map, no route", () => {
+		const now = at("2026-10-16T18:00:00Z");
+		const p = computePace(20_000, 60_000, RESET, now, undefined, { days: new Map([["2026-10-16", 3000]]) })!;
+		const models = { "github-copilot/claude-opus-5.5": "vitu-gateway/claude-opus-5-5" };
+		expect(routeFor(p, models, now)).toMatchObject({ until: nextMidnight(now), models });
+		expect(nextMidnight(now)).toBe(at("2026-10-17T00:00:00Z"));
+		expect(routeFor(p, undefined, now)).toBeUndefined();
+		const calm = computePace(20_000, 60_000, RESET, now, undefined, { days: new Map([["2026-10-16", 1000]]) })!;
+		expect(routeFor(calm, models, now)).toBeUndefined();
+	});
+});
+
 describe("text", () => {
 	test("line and note carry the numbers and the routing rule", () => {
 		const now = at("2026-10-03T14:00:00Z");
 		const p = computePace(23_000, 60_000, RESET, now, { date: "2026-10-03", at: at("2026-10-02T21:00:00Z"), used: 22_500 })!;
 		const line = paceLine(p, now);
-		expect(line).toStartWith("Copilot credits: 23k of 60k used, reset in 29d; 1.3k/day lasts until the reset; average so far 8.9k/day, today 500 (since 10-02 21:00)");
+		expect(line).toStartWith("Copilot credits: 23k of 60k used, reset in 29d; 1.3k/day lasts until the reset; average so far 8.9k/day, today 500 of 1.3k (since 10-02 21:00)");
 		expect(line).toContain("gone in ~4d");
 		expect(paceNote(p, now)).toContain("Implementation only on the default worker type");
 		expect(paceNote(p, now, undefined, { "high-today": "a", over: "use worker", critical: "c" })).toEndWith(" use worker");
@@ -197,6 +255,22 @@ describe("extension", () => {
 		expect(h.get("tool_result")!({ toolName: "subagent", content: [{ type: "text", text: "launched" }] })).toBeUndefined();
 		const past = harness(37_000, { mutedUntil: "2020-01-01" });
 		expect((await past.get("before_agent_start")!({})).message.customType).toBe(CUSTOM_TYPE);
+	});
+
+	test("a day over its share writes the route and tells the coordinator once", async () => {
+		const models = { "github-copilot/claude-opus-5.5": "vitu-gateway/claude-opus-5-5" };
+		const telemetryDir = mkdtempSync(join(tmpdir(), "copilot-pace-telemetry-"));
+		const telemetry = join(telemetryDir, "today.jsonl");
+		writeFileSync(telemetry, `${JSON.stringify({ kind: "request", provider: "github-copilot", cost: 50, ts: new Date().toISOString() })}\n`);
+		const h = harness(37_000, { route: { models }, telemetryFiles: [telemetry] });
+		const first = await h.get("before_agent_start")!({});
+		expect(first.message.content).toContain("Until midnight every new subagent of a Copilot type starts on the gateway");
+		const route = JSON.parse(readFileSync(join(dir, "state", "model-route.json"), "utf-8"));
+		expect(route.models).toEqual(models);
+		expect(route.until).toBe(nextMidnight(Date.now()));
+		const second = await h.get("before_agent_start")!({});
+		expect(second?.message?.content ?? "").not.toContain("Until midnight");
+		rmSync(telemetryDir, { recursive: true, force: true });
 	});
 
 	test("subagents load nothing", () => {
