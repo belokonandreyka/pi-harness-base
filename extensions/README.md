@@ -371,6 +371,21 @@ sends one user message asking the model to repeat the call (a new turn), at
 most `maxRetries` (2) per session. Config `dropped-toolcall-guard.json`;
 `PI_DROPPED_TOOLCALL_GUARD=0` disables. Enabled in both profiles.
 
+## provider-error-alert
+
+Raises herdr's blocked state when a run died on a provider error. When the
+provider cannot be reached (`UND_ERR_CONNECT_TIMEOUT`, `read ETIMEDOUT`,
+"Retry failed after 3 attempts"), pi retries, ends the run with an error and
+sits at its prompt: herdr shows the pane as idle, and a pane subagent waits for
+the coordinator's inactivity timeout (seen 2026-11-16). On `agent_settled` with
+a non-aborted run whose last assistant message stopped with `error`, it emits
+`herdr:blocked` (label "Збій провайдера") after `graceMs` (3000), so herdr plays
+its needs-input sound and baran-push sends a push; a resend within the grace
+period (a fallback extension) cancels it, and the next run, user input or
+shutdown clears it. Config `provider-error-alert.json` (`enabled`, `graceMs`);
+`PI_PROVIDER_ERROR_ALERT=0` disables. e2e: `test/e2e/provider-error-alert.e2e.ts`
+(scripted provider with `FAKE_FAIL`). Enabled in both profiles.
+
 ## copilot-usage
 
 A replacement footer. Replaces

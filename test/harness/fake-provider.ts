@@ -10,6 +10,8 @@
  * - a compaction summary carrying a handoff note present  → "DONE"
  * - anything else                                          → calls `view_context`
  *
+ * FAKE_FAIL=<text> makes every call fail as an unreachable provider would.
+ *
  * Env: FAKE_WINDOW (200000), FAKE_BASE (5000) and FAKE_PER_MESSAGE (4000)
  * shape the reported usage: input = BASE + PER_MESSAGE × non-system messages.
  * No network, no auth, no cost.
@@ -103,6 +105,16 @@ export default function fakeProvider(pi: ExtensionAPI): void {
         stopReason: "pending",
         timestamp: Date.now(),
       };
+      if (process.env.FAKE_FAIL) {
+        // Provider unreachable: the shape pi gets when the HTTP connect times out.
+        queueMicrotask(() => {
+          output.stopReason = "error";
+          output.errorMessage = `Request timed out.: Connect Timeout Error (${process.env.FAKE_FAIL})`;
+          stream.push({ type: "error", reason: "error", error: output });
+          stream.end();
+        });
+        return stream;
+      }
       queueMicrotask(() => {
         stream.push({ type: "start", partial: output });
         for (const block of content) {
