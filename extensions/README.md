@@ -386,6 +386,23 @@ shutdown clears it. Config `provider-error-alert.json` (`enabled`, `graceMs`);
 `PI_PROVIDER_ERROR_ALERT=0` disables. e2e: `test/e2e/provider-error-alert.e2e.ts`
 (scripted provider with `FAKE_FAIL`). Enabled in both profiles.
 
+## herdr-ticket-label
+
+Several herdr workspaces opened on one repository all show the repository
+name. When an interactive message names a ticket key (`FLV-1572`, or a Jira
+link containing one), the workspace holding this pi pane is renamed to the
+keys, newest last, at most `max` (`FLV-1572 · VITU-11802`). Keys inside
+`<pasted_content>` blocks, slash commands and injected messages do not count.
+Keys are stored in the session, so a resumed session keeps its list; the
+label stays after pi exits. `/ticket` shows the state, `/ticket KEY ...`
+sets keys by hand, `/ticket off` restores the label from before the first
+rename, `/ticket on` resumes. Config `herdr-ticket-label.json` (`enabled`,
+`projects` — allowed Jira prefixes, otherwise any `ABC-123` minus a
+denylist such as GPT-6 or UTF-8 — `max`, `separator`);
+`PI_HERDR_TICKET_LABEL=0` disables. A no-op outside a herdr pane. Load it in
+the orchestrator profile only: a subagent pane must not rename the
+coordinator's workspace.
+
 ## copilot-usage
 
 A replacement footer. Replaces

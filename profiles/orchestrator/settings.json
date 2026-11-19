@@ -16,6 +16,7 @@
     "/Users/<you>/projects/pi-harness-base/extensions/pasted-content/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/dropped-toolcall-guard/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/provider-error-alert/index.ts",
+    "/Users/<you>/projects/pi-harness-base/extensions/herdr-ticket-label/index.ts",
     "/Users/<you>/projects/pi-harness-base/extensions/gateway-warmer/index.ts"
   ],
   "cacheWarming": "off"
