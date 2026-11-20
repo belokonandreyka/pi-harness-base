@@ -9,7 +9,8 @@ For every task × config × repeat the runner
 1. adds a detached git worktree at the task's base commit (a sibling of the
    repository, `<repo>-eval-<task>-<config>-<n>`), symlinks the paths the task
    lists under `link` (node_modules and the like) from the main checkout
-   (or from `$EVAL_LINK_ROOT`, laid out like the repository),
+   (or from the task's `linkRoot`, else `$EVAL_LINK_ROOT`, either laid out
+   like the repository),
 2. runs `pi -p --mode json` in `<worktree>/<workdir>` with the config's profile,
    model, thinking level, system prompt and tools, stdin from /dev/null,
    stdout to `events.jsonl`, and kills it after the task's `timeoutMin`,
@@ -124,8 +125,10 @@ def make_worktree(task, name):
     # EVAL_LINK_ROOT: a directory laid out like the repository that holds the
     # linked paths (node_modules) installed from the lockfile the task set was
     # built on; without it they come from the main checkout, whose
-    # dependencies move on with the branch it has checked out
-    link_root = expand(os.environ["EVAL_LINK_ROOT"]) if os.environ.get("EVAL_LINK_ROOT") else repo
+    # dependencies move on with the branch it has checked out. A task whose base
+    # needs other dependencies than the rest of the set names its own `linkRoot`,
+    # which wins over the variable.
+    link_root = expand(task.get("linkRoot") or os.environ.get("EVAL_LINK_ROOT") or repo)
     for rel in task.get("link") or []:
         src, dst = os.path.join(link_root, rel), os.path.join(wt, rel)
         if os.path.exists(src) and not os.path.exists(dst):
